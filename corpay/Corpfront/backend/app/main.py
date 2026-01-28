@@ -1,0 +1,130 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from contextlib import asynccontextmanager
+import asyncio
+from app.config import settings
+from app.database import engine, Base
+from app.api import dashboard, auth, revenue, posts, employees, payments, system, config, slideshow
+from app.api import linkedin_auth, linkedin_auth
+from app.services.linkedin_sync import run_periodic_sync
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan - start background tasks on startup"""
+    # Start background task for LinkedIn sync
+    sync_task = asyncio.create_task(run_periodic_sync(interval_minutes=30))
+    
+    yield
+    
+    # Cleanup on shutdown
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(
+    title="Dashboard API",
+    description="Backend API for Corpay Dashboard",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Serve uploaded files statically
+upload_dir = Path(settings.upload_dir)
+upload_dir.mkdir(parents=True, exist_ok=True)
+try:
+    app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
+except Exception as e:
+    print(f"Warning: Could not mount static files: {e}")
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Debug middleware for revenue upload to trace CORS/status behaviour
+@app.middleware("http")
+async def debug_revenue_upload_middleware(request, call_next):
+    if request.url.path.startswith("/api/admin/revenue/upload-dev"):
+        try:
+            from datetime import datetime as _dt
+            import json as _json
+            payload = {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H7",
+                "location": "main.py:debug_revenue_upload_middleware:request",
+                "message": "Incoming upload-dev request",
+                "data": {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "origin": request.headers.get("origin"),
+                },
+                "timestamp": int(_dt.now().timestamp() * 1000),
+            }
+            with open("/Users/madhujitharumugam/Desktop/latest_corpgit/corpay/.cursor/debug.log", "a") as f:
+                f.write(_json.dumps(payload) + "\n")
+        except Exception:
+            pass
+
+        response = await call_next(request)
+
+        try:
+            from datetime import datetime as _dt
+            import json as _json
+            payload = {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H8",
+                "location": "main.py:debug_revenue_upload_middleware:response",
+                "message": "upload-dev response",
+                "data": {
+                    "status_code": response.status_code,
+                    "aca_origin": response.headers.get("access-control-allow-origin"),
+                },
+                "timestamp": int(_dt.now().timestamp() * 1000),
+            }
+            with open("/Users/madhujitharumugam/Desktop/latest_corpgit/corpay/.cursor/debug.log", "a") as f:
+                f.write(_json.dumps(payload) + "\n")
+        except Exception:
+            pass
+
+        return response
+
+    return await call_next(request)
+
+# Include routers
+app.include_router(dashboard.router)
+app.include_router(auth.router)
+app.include_router(revenue.router)
+app.include_router(posts.router)
+app.include_router(employees.router)
+app.include_router(payments.router)
+app.include_router(system.router)
+app.include_router(config.router)
+app.include_router(linkedin_auth.router)
+app.include_router(slideshow.router)
+
+
+@app.get("/")
+async def root():
+    return {"message": "Dashboard API", "docs": "/docs"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+

@@ -1,0 +1,1246 @@
+import { useEffect, useRef, useState } from 'react';
+import { Linkedin } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
+import { StatCard } from './components/StatCard';
+import { LinkedInPostCard } from './components/LinkedInPostCard';
+import { EmployeeMilestone } from './components/EmployeeMilestone';
+import { CompanyAnnouncement } from './components/CompanyAnnouncement';
+import { NewsroomCard } from './components/NewsroomCard';
+import { ResourceCard } from './components/ResourceCard';
+import { FullScreenSlideshow } from './components/FullScreenSlideshow';
+import { dashboardApi } from './services/api';
+import corpayLogo from './assets/895e861462df910e5a72623a9b8e8a744f2ab348.png';
+import crossBorderGlimpse from './assets/aaf95357c3595e79ededa176ac81f9fc76f886b5.png';
+import backgroundPattern from './assets/8a99135dee321789a4c9c35b37279ec88120fc47.png';
+import axios from 'axios';
+
+const revenueData = [
+  { month: 'Jan', value: 70 },
+  { month: 'Feb', value: 72 },
+  { month: 'Mar', value: 75 },
+  { month: 'Apr', value: 92, highlight: true },
+  { month: 'May', value: 73 },
+  { month: 'Jun', value: 87 },
+  { month: 'Jul', value: 89 },
+  { month: 'Aug', value: 72 },
+  { month: 'Sep', value: 105, highlight: true },
+  { month: 'Oct', value: 88 },
+  { month: 'Nov', value: 91 },
+  { month: 'Dec', value: 83 },
+];
+
+const engagementData = [
+  { day: 'Mon', value: 1800 },
+  { day: 'Tue', value: 1900 },
+  { day: 'Wed', value: 1700 },
+  { day: 'Thu', value: 2000 },
+  { day: 'Fri', value: 2100 },
+];
+
+// Default revenue proportions (shape matches backend API: category, percentage, color)
+const pieData = [
+  { category: 'Fleet', percentage: 40, color: '#981239' },
+  { category: 'Corporate', percentage: 35, color: '#3D1628' },
+  { category: 'Lodging', percentage: 25, color: '#E6E8E7' },
+];
+
+const linkedInPosts = [
+  {
+    author: 'Corpay',
+    timeAgo: '2 hours ago',
+    content: "We're excited to be named a leader in corporate payments for the 5th year in a row! Our team's dedication makes it all possible. #Fintech #Payments",
+    image: 'https://images.unsplash.com/photo-1591696205602-2f950c417cb9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMGdyb3d0aCUyMGNoYXJ0fGVufDF8fHx8MTc2MzM3MTQ4MHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral'
+  },
+  {
+    author: 'Corpay',
+    timeAgo: '1 day ago',
+    content: 'Join our upcoming webinar on the future of corporate payment solutions. Register now to secure your spot! Link in bio.',
+    image: undefined
+  },
+  {
+    author: 'Corpay',
+    timeAgo: '3 days ago',
+    content: 'Our latest case study with HealthFirst shows how they reduced processing costs by 30%. A huge win for efficiency! #Healthcare #Finance',
+    image: 'https://images.unsplash.com/photo-1755189118414-14c8dacdb082?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral'
+  },
+  {
+    author: 'Corpay',
+    timeAgo: '5 days ago',
+    content: 'Celebrating our partnership with industry leaders! Together, we\'re shaping the future of digital payments.',
+    image: undefined
+  },
+  {
+    author: 'Corpay',
+    timeAgo: '1 week ago',
+    content: 'Innovation in payment processing: Discover how we\'re revolutionizing fleet management and corporate card solutions.',
+    image: 'https://images.unsplash.com/photo-1707075891545-41b982930351?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmaW50ZWNoJTIwdGVjaG5vbG9neXxlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral'
+  },
+];
+
+const crossBorderPosts = [
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '30 minutes ago',
+    content: 'Corpay Cross-Border At a Glimpse (YTD Sept\'25) - Exceptional performance across all metrics! 🚀 $716M Revenue with 102% budget achievement, 2,476 Net New Customers, and 94% Core Retention. #CrossBorder #Growth',
+    image: crossBorderGlimpse,
+    likes: 342,
+    comments: 28
+  },
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '1 hour ago',
+    content: 'Managing international payments just got easier! Our new platform features are designed to streamline your global transactions. #CrossBorder #FX',
+    image: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnbG9iYWwlMjBidXNpbmVzc3xlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+    likes: 189,
+    comments: 15
+  },
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '4 hours ago',
+    content: 'Currency markets update: How geopolitical events are shaping FX rates this week. Read our expert analysis.',
+    image: undefined,
+    likes: 156,
+    comments: 22
+  },
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '2 days ago',
+    content: 'Success story: How a multinational retailer saved $2M annually with our cross-border payment solutions. #GlobalPayments',
+    image: 'https://images.unsplash.com/photo-1556742502-ec7c0e9f34b1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxyZXRhaWwlMjBzdG9yZXxlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+    likes: 421,
+    comments: 37
+  },
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '4 days ago',
+    content: 'Webinar alert! Join us for "Navigating International Trade in 2025" - Expert insights on currency risk management.',
+    image: undefined,
+    likes: 267,
+    comments: 19
+  },
+  {
+    author: 'Corpay Cross-Border',
+    timeAgo: '6 days ago',
+    content: 'Expanding to new markets? Our comprehensive guide to cross-border payments can help you scale globally with confidence.',
+    image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3b3JsZCUyMG1hcHxlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+    likes: 198,
+    comments: 14
+  },
+];
+
+const employeeMilestones = [
+  {
+    name: "Sarah Chen's Work Anniversary",
+    description: "5 Years in Marketing",
+    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
+    borderColor: "#BE1549",
+    backgroundColor: "#fff5f9"
+  },
+  {
+    name: "Michael Brown's Birthday",
+    description: "Happy Birthday!",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
+    borderColor: "#0085C2",
+    backgroundColor: "#f0f9fd"
+  },
+  {
+    name: "Emily White joins Engineering",
+    description: "Welcome to the team!",
+    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
+    borderColor: "#981239",
+    backgroundColor: "#fef5f8"
+  },
+  {
+    name: "David Martinez's Work Anniversary",
+    description: "10 Years in Finance",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
+    borderColor: "#522239",
+    backgroundColor: "#f9f5f7"
+  },
+  {
+    name: "Jessica Taylor's Promotion",
+    description: "Promoted to Senior Manager",
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
+    borderColor: "#981239",
+    backgroundColor: "#fef5f8"
+  },
+  {
+    name: "Robert Johnson joins Sales",
+    description: "Welcome aboard!",
+    avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop",
+    borderColor: "#0085C2",
+    backgroundColor: "#f0f9fd"
+  },
+  {
+    name: "Amanda Lee's Birthday",
+    description: "Happy Birthday!",
+    avatar: "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=100&h=100&fit=crop",
+    borderColor: "#BE1549",
+    backgroundColor: "#fff5f9"
+  },
+  {
+    name: "James Wilson's Birthday",
+    description: "Happy Birthday!",
+    avatar: "https://images.unsplash.com/photo-1519345182560-3f2917c472ef?w=100&h=100&fit=crop",
+    borderColor: "#981239",
+    backgroundColor: "#fef5f8"
+  },
+  {
+    name: "Sophia Martinez's Birthday",
+    description: "Happy Birthday!",
+    avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop",
+    borderColor: "#522239",
+    backgroundColor: "#f9f5f7"
+  },
+];
+
+export default function App() {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef2 = useRef<HTMLDivElement>(null);
+  const milestonesScrollRef = useRef<HTMLDivElement>(null);
+  const fetchSharePriceDataRef = useRef<(() => Promise<void>) | null>(null);
+  
+  // State for API data
+  const [loading, setLoading] = useState(true);
+  const [revenue, setRevenue] = useState({ total_amount: 0, percentage_change: 0 });
+  const [sharePrice, setSharePrice] = useState({ price: 0, change_percentage: 0 });
+  const [revenueTrends, setRevenueTrends] = useState(revenueData);
+  const [revenueProportions, setRevenueProportions] = useState(pieData);
+  const [posts, setPosts] = useState(linkedInPosts);
+  const [crossBorderPostsList, setCrossBorderPostsList] = useState(crossBorderPosts);
+  const [milestonesList, setMilestonesList] = useState<Array<{
+    name: string;
+    description: string;
+    avatar: string;
+    borderColor: string;
+    backgroundColor: string;
+  }>>([]);
+  const [payments, setPayments] = useState({ amount_processed: 428000000, transaction_count: 19320 });
+  const [systemPerformance, setSystemPerformance] = useState({ uptime_percentage: 99.985, success_rate: 99.62 });
+  const [newsroomItems, setNewsroomItems] = useState<Array<{
+    title: string;
+    url: string;
+    date?: string;
+    category?: string;
+    excerpt?: string;
+  }>>([]);
+  const [resourceItems, setResourceItems] = useState<Array<{
+    title: string;
+    url: string;
+    date?: string;
+    category?: string;
+    excerpt?: string;
+  }>>([]);
+  
+  // Slideshow state
+  const [slideshowState, setSlideshowState] = useState<{
+    is_active: boolean;
+    file_url: string | null;
+    file_name: string | null;
+  }>({
+    is_active: false,
+    file_url: null,
+    file_name: null
+  });
+
+  // Top 3 months by revenue value for bar coloring
+  const topThreeMonthsByValue = (() => {
+    if (!revenueTrends || revenueTrends.length === 0) return [] as string[];
+    const sorted = [...revenueTrends].sort((a, b) => (b.value || 0) - (a.value || 0));
+    return sorted.slice(0, 3).map(item => item.month);
+  })();
+
+  // Function to fetch revenue data
+  const fetchRevenueData = async () => {
+    try {
+      console.log('[Revenue] Fetching from API...');
+      const revenueRes = await dashboardApi.getRevenue();
+      console.log('[Revenue] Full API Response:', revenueRes);
+      console.log('[Revenue] Response status:', revenueRes.status);
+      console.log('[Revenue] Response data:', revenueRes.data);
+      
+      // Axios wraps the response, so the actual data is in revenueRes.data
+      const responseData = revenueRes.data;
+      if (responseData) {
+        console.log('[Revenue] Parsed Response Data:', responseData);
+        const newRevenue = {
+          total_amount: Number(responseData.total_amount) || 0,
+          percentage_change: Number(responseData.percentage_change) || 0
+        };
+        console.log('[Revenue] Setting state to:', newRevenue);
+        console.log('[Revenue] Will display as:', `$${(newRevenue.total_amount / 1000000).toFixed(0)}M`);
+        setRevenue(newRevenue);
+        // Also save to localStorage as backup
+        localStorage.setItem('revenueData', JSON.stringify(newRevenue));
+      } else {
+        console.warn('[Revenue] No data in API response:', revenueRes);
+      }
+    } catch (error) {
+      console.error('[Revenue] Error fetching from API:', error);
+      // Fallback to localStorage if API fails
+      const localRevenue = localStorage.getItem('revenueData');
+      if (localRevenue) {
+        try {
+          const parsed = JSON.parse(localRevenue);
+          console.log('[Revenue] Using localStorage data:', parsed);
+          setRevenue({
+            total_amount: parsed.total_amount || 0,
+            percentage_change: parsed.percentage_change || 0
+          });
+        } catch (e) {
+          console.error('[Revenue] Failed to parse localStorage:', e);
+        }
+      }
+    }
+  };
+
+  // Fetch data from API
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [
+          revenueRes,
+          sharePriceRes,
+          trendsRes,
+          proportionsRes,
+          postsRes,
+          crossBorderRes,
+          employeesRes,
+          paymentsRes,
+          systemRes,
+          newsroomRes,
+          resourcesRes,
+        ] = await Promise.allSettled([
+          dashboardApi.getRevenue(),
+          dashboardApi.getSharePrice(),
+          dashboardApi.getRevenueTrends(),
+          dashboardApi.getRevenueProportions(),
+          dashboardApi.getPosts(10),
+          dashboardApi.getCrossBorderPosts(10),
+          dashboardApi.getEmployees(20),
+          dashboardApi.getPayments(),
+          dashboardApi.getSystemPerformance(),
+          dashboardApi.getNewsroom(4),
+          dashboardApi.getResourcesNewsroom(4),
+        ]);
+
+        if (revenueRes.status === 'fulfilled') {
+          console.log('[Initial Load] Revenue response:', revenueRes.value);
+          console.log('[Initial Load] Revenue data from API:', revenueRes.value.data);
+          const revenueData = revenueRes.value.data || {};
+          const newRevenue = {
+            total_amount: Number(revenueData.total_amount) || 0,
+            percentage_change: Number(revenueData.percentage_change) || 0
+          };
+          console.log('[Initial Load] Setting revenue state to:', newRevenue);
+          console.log('[Initial Load] Will display as:', `$${(newRevenue.total_amount / 1000000).toFixed(0)}M`);
+          setRevenue(newRevenue);
+          // Save to localStorage as backup
+          localStorage.setItem('revenueData', JSON.stringify(newRevenue));
+        } else {
+          console.warn('[Initial Load] Revenue API failed:', revenueRes.reason);
+          console.warn('[Initial Load] Full error:', revenueRes);
+          // Fallback to localStorage if API fails
+          const localRevenue = localStorage.getItem('revenueData');
+          if (localRevenue) {
+            try {
+              const parsed = JSON.parse(localRevenue);
+              setRevenue({
+                total_amount: parsed.total_amount,
+                percentage_change: parsed.percentage_change
+              });
+            } catch (e) {
+              console.error('Failed to parse local revenue data:', e);
+            }
+          }
+        }
+        if (sharePriceRes.status === 'fulfilled') {
+          console.log('[Initial Load] Share price data from API:', sharePriceRes.value.data);
+          const sharePriceData = sharePriceRes.value.data || {};
+          setSharePrice({
+            price: Number(sharePriceData.price) || 0,
+            change_percentage: Number(sharePriceData.change_percentage) || 0
+          });
+        } else {
+          console.warn('[Initial Load] Share price API failed:', sharePriceRes.reason);
+          // Fallback to localStorage if API fails
+          const localSharePrice = localStorage.getItem('sharePriceData');
+          if (localSharePrice) {
+            try {
+              const parsed = JSON.parse(localSharePrice);
+              setSharePrice({
+                price: parsed.price || 0,
+                change_percentage: parsed.change_percentage || 0
+              });
+            } catch (e) {
+              console.error('Failed to parse local share price data:', e);
+            }
+          }
+        }
+        if (trendsRes.status === 'fulfilled') {
+          setRevenueTrends(trendsRes.value.data);
+        }
+        if (proportionsRes.status === 'fulfilled') {
+          setRevenueProportions(proportionsRes.value.data);
+        }
+        if (postsRes.status === 'fulfilled') {
+          // Transform API response to match component format
+          const postsData = postsRes.value.data || [];
+          const transformedPosts = postsData.map((post: any) => ({
+            author: post.author || 'Corpay',
+            timeAgo: post.time_ago || 'Just now',
+            content: post.content || '',
+            image: post.image_url || undefined,
+            likes: post.likes || 0,
+            comments: post.comments || 0
+          }));
+          setPosts(transformedPosts.length > 0 ? transformedPosts : linkedInPosts);
+        }
+        if (crossBorderRes.status === 'fulfilled') {
+          // Transform API response to match component format
+          const crossBorderData = crossBorderRes.value.data || [];
+          const transformedCrossBorder = crossBorderData.map((post: any) => ({
+            author: post.author || 'Corpay Cross-Border',
+            timeAgo: post.time_ago || 'Just now',
+            content: post.content || '',
+            image: post.image_url || undefined,
+            likes: post.likes || 0,
+            comments: post.comments || 0
+          }));
+          setCrossBorderPostsList(transformedCrossBorder.length > 0 ? transformedCrossBorder : crossBorderPosts);
+        }
+        if (employeesRes.status === 'fulfilled') {
+          const employeesData = employeesRes.value.data || [];
+          // Transform API response to match component format
+          const transformedMilestones = employeesData.map((emp: any) => {
+            // Construct full URL for avatar if path exists
+            let avatarUrl = 'https://via.placeholder.com/100';
+            if (emp.avatar_path) {
+              // If it's already a full URL, use it; otherwise construct from backend
+              if (emp.avatar_path.startsWith('http://') || emp.avatar_path.startsWith('https://')) {
+                avatarUrl = emp.avatar_path;
+              } else {
+                // Construct URL to backend uploads directory
+                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                avatarUrl = `${API_BASE_URL}/uploads/${emp.avatar_path}`;
+              }
+            }
+            
+            return {
+              name: emp.name || '',
+              description: emp.description || '',
+              avatar: avatarUrl,
+              borderColor: emp.border_color || '#981239',
+              backgroundColor: emp.background_color || '#fef5f8'
+            };
+          });
+          setMilestonesList(transformedMilestones);
+        } else {
+          console.warn('[Initial Load] Employees API failed:', employeesRes.reason);
+          // Don't use hardcoded data, keep empty array if API fails
+          setMilestonesList([]);
+        }
+        if (paymentsRes.status === 'fulfilled') {
+          setPayments(paymentsRes.value.data);
+        }
+        if (systemRes.status === 'fulfilled') {
+          setSystemPerformance(systemRes.value.data);
+        }
+        if (newsroomRes.status === 'fulfilled') {
+          // #region agent log
+          fetch('http://127.0.0.1:7254/ingest/ea07c2c1-9a77-4dea-9334-f6ccf4b26b3e', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: 'debug-session',
+              runId: 'newsroom-pre',
+              hypothesisId: 'F1',
+              location: 'App.tsx:fetchData:newsroomFulfilled',
+              message: 'Newsroom API fulfilled',
+              data: {
+                count: Array.isArray(newsroomRes.value.data) ? newsroomRes.value.data.length : null,
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion agent log
+          setNewsroomItems(newsroomRes.value.data || []);
+        }
+        if (resourcesRes.status === 'fulfilled') {
+          // #region agent log
+          fetch('http://127.0.0.1:7254/ingest/ea07c2c1-9a77-4dea-9334-f6ccf4b26b3e', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: 'debug-session',
+              runId: 'resources-pre',
+              hypothesisId: 'F2',
+              location: 'App.tsx:fetchData:resourcesFulfilled',
+              message: 'Resources API fulfilled',
+              data: {
+                count: Array.isArray(resourcesRes.value.data) ? resourcesRes.value.data.length : null,
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion agent log
+          setResourceItems(resourcesRes.value.data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    
+    // Refresh data every 5 minutes
+    const interval = setInterval(fetchData, 5 * 60 * 1000);
+    
+    // Refresh revenue data more frequently (every 5 seconds) to catch updates immediately
+    const revenueInterval = setInterval(() => {
+      fetchRevenueData();
+    }, 5000);
+    
+    // Function to fetch share price data
+    const fetchSharePriceData = async () => {
+      try {
+        console.log('[SharePrice] Fetching from API...');
+        const sharePriceRes = await dashboardApi.getSharePrice();
+        console.log('[SharePrice] Full API Response:', sharePriceRes);
+        console.log('[SharePrice] Response status:', sharePriceRes.status);
+        console.log('[SharePrice] Response data:', sharePriceRes.data);
+        
+        // Axios wraps the response, so the actual data is in sharePriceRes.data
+        const responseData = sharePriceRes.data;
+        if (responseData) {
+          console.log('[SharePrice] Parsed Response Data:', responseData);
+          const newSharePrice = {
+            price: Number(responseData.price) || 0,
+            change_percentage: Number(responseData.change_percentage) || 0
+          };
+          console.log('[SharePrice] Setting state to:', newSharePrice);
+          setSharePrice(newSharePrice);
+          // Also save to localStorage as backup
+          localStorage.setItem('sharePriceData', JSON.stringify(newSharePrice));
+        } else {
+          console.warn('[SharePrice] No data in API response:', sharePriceRes);
+        }
+      } catch (error) {
+        console.error('[SharePrice] Error fetching from API:', error);
+        // Fallback to localStorage if API fails
+        const localSharePrice = localStorage.getItem('sharePriceData');
+        if (localSharePrice) {
+          try {
+            const parsed = JSON.parse(localSharePrice);
+            console.log('[SharePrice] Using localStorage data:', parsed);
+            setSharePrice({
+              price: parsed.price || 0,
+              change_percentage: parsed.change_percentage || 0
+            });
+          } catch (e) {
+            console.error('[SharePrice] Failed to parse localStorage:', e);
+          }
+        }
+      }
+    };
+    
+    // Store function reference for manual refresh
+    fetchSharePriceDataRef.current = fetchSharePriceData;
+    
+    // Immediately fetch share price data on mount
+    fetchSharePriceData();
+    
+    // Refresh share price data more frequently (every 3 seconds) to catch updates immediately
+    const sharePriceInterval = setInterval(() => {
+      fetchSharePriceData();
+    }, 3000);
+    
+    // Listen for manual refresh event
+    const handleRefreshSharePrice = () => {
+      fetchSharePriceData();
+    };
+    window.addEventListener('refreshSharePrice', handleRefreshSharePrice);
+    
+    // Listen for storage events (when admin dashboard saves to localStorage from different origin)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'revenueData' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          console.log('Revenue updated from storage event:', parsed);
+          setRevenue({
+            total_amount: parsed.total_amount,
+            percentage_change: parsed.percentage_change
+          });
+        } catch (error) {
+          console.error('Failed to parse revenue data from storage event:', error);
+        }
+      }
+      if (e.key === 'sharePriceData' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          console.log('Share price updated from storage event:', parsed);
+          setSharePrice({
+            price: parsed.price || 0,
+            change_percentage: parsed.change_percentage || 0
+          });
+        } catch (error) {
+          console.error('Failed to parse share price data from storage event:', error);
+        }
+      }
+      if (e.key === 'chartProportions' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          console.log('Chart proportions updated from storage event:', parsed);
+          setRevenueProportions(parsed);
+        } catch (error) {
+          console.error('Failed to parse chart proportions data from storage event:', error);
+        }
+      }
+      if (e.key === 'revenueTrends' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          console.log('Revenue trends updated from storage event:', parsed);
+          setRevenueTrends(parsed);
+        } catch (error) {
+          console.error('Failed to parse revenue trends data from storage event:', error);
+        }
+      }
+    };
+    
+    // Listen for custom events (for same-origin or cross-origin communication)
+    const handleRevenueUpdate = (e: CustomEvent) => {
+      if (e.detail) {
+        console.log('Revenue updated from custom event:', e.detail);
+        setRevenue({
+          total_amount: e.detail.total_amount,
+          percentage_change: e.detail.percentage_change
+        });
+        // Also trigger immediate API fetch to get latest from backend
+        fetchRevenueData();
+      }
+    };
+    
+    const handleSharePriceUpdate = (e: CustomEvent) => {
+      if (e.detail) {
+        console.log('Share price updated from custom event:', e.detail);
+        setSharePrice({
+          price: e.detail.price || 0,
+          change_percentage: e.detail.change_percentage || 0
+        });
+        // Also trigger immediate API fetch to get latest from backend
+        fetchSharePriceData();
+      }
+    };
+    
+    const handleChartProportionsUpdate = (e: CustomEvent) => {
+      if (e.detail) {
+        console.log('Chart proportions updated from custom event:', e.detail);
+        setRevenueProportions(e.detail);
+        // Also fetch from API to ensure consistency
+        dashboardApi.getRevenueProportions()
+          .then((response) => {
+            if (response.data) {
+              setRevenueProportions(response.data);
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to fetch proportions from API:', error);
+          });
+      }
+    };
+    
+    // Function to fetch revenue proportions data
+    const fetchRevenueProportionsData = async () => {
+      try {
+        const proportionsRes = await dashboardApi.getRevenueProportions();
+        if (proportionsRes && proportionsRes.data) {
+          setRevenueProportions(proportionsRes.data);
+          localStorage.setItem('chartProportions', JSON.stringify(proportionsRes.data));
+        }
+      } catch (error) {
+        console.error('Error fetching revenue proportions:', error);
+        // Fallback to localStorage
+        const localProportions = localStorage.getItem('chartProportions');
+        if (localProportions) {
+          try {
+            const parsed = JSON.parse(localProportions);
+            setRevenueProportions(parsed);
+          } catch (e) {
+            console.error('Failed to parse local proportions data:', e);
+          }
+        }
+      }
+    };
+
+    const handleRevenueTrendsUpdate = (e: CustomEvent) => {
+      if (e.detail) {
+        console.log('Revenue trends updated from custom event:', e.detail);
+        setRevenueTrends(e.detail);
+        // Also fetch from API to ensure consistency
+        dashboardApi.getRevenueTrends()
+          .then((response) => {
+            if (response.data) {
+              setRevenueTrends(response.data);
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to fetch revenue trends from API:', error);
+          });
+      }
+    };
+    
+    // Refresh proportions every 5 seconds
+    const proportionsInterval = setInterval(() => {
+      fetchRevenueProportionsData();
+    }, 5000);
+    
+    // Function to fetch employee milestones data
+    const fetchEmployeesData = async () => {
+      try {
+        const employeesRes = await dashboardApi.getEmployees(20);
+        if (employeesRes && employeesRes.data) {
+          const employeesData = employeesRes.data || [];
+          // Transform API response to match component format
+          const transformedMilestones = employeesData.map((emp: any) => {
+            // Construct full URL for avatar if path exists
+            let avatarUrl = 'https://via.placeholder.com/100';
+            if (emp.avatar_path) {
+              // If it's already a full URL, use it; otherwise construct from backend
+              if (emp.avatar_path.startsWith('http://') || emp.avatar_path.startsWith('https://')) {
+                avatarUrl = emp.avatar_path;
+              } else {
+                // Construct URL to backend uploads directory
+                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                avatarUrl = `${API_BASE_URL}/uploads/${emp.avatar_path}`;
+              }
+            }
+            
+            return {
+              name: emp.name || '',
+              description: emp.description || '',
+              avatar: avatarUrl,
+              borderColor: emp.border_color || '#981239',
+              backgroundColor: emp.background_color || '#fef5f8'
+            };
+          });
+          setMilestonesList(transformedMilestones);
+        }
+      } catch (error) {
+        console.error('Error fetching employee milestones:', error);
+        // Don't use hardcoded data - keep empty if API fails
+      }
+    };
+    
+    // Refresh employee milestones every 5 seconds
+    const employeesInterval = setInterval(() => {
+      fetchEmployeesData();
+    }, 5000);
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('revenueDataUpdated', handleRevenueUpdate as EventListener);
+    window.addEventListener('sharePriceDataUpdated', handleSharePriceUpdate as EventListener);
+    window.addEventListener('chartProportionsUpdated', handleChartProportionsUpdate as EventListener);
+    window.addEventListener('revenueTrendsUpdated', handleRevenueTrendsUpdate as EventListener);
+    
+    // Function to fetch slideshow state
+    const fetchSlideshowState = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const response = await axios.get(`${API_BASE_URL}/api/dashboard/slideshow`, { timeout: 5000 });
+        if (response.data) {
+          const newState = {
+            is_active: response.data.is_active || false,
+            file_url: response.data.file_url || null,
+            file_name: response.data.file_name || null
+          };
+          // Always update to match backend state
+          setSlideshowState(prev => {
+            // Only log if state actually changed
+            if (prev.is_active !== newState.is_active || prev.file_url !== newState.file_url) {
+              console.log('[App] Slideshow state changed:', {
+                was_active: prev.is_active,
+                now_active: newState.is_active,
+                file_url: newState.file_url
+              });
+            }
+            return newState;
+          });
+        }
+      } catch (error) {
+        // Don't deactivate slideshow on API error - keep current state
+        console.debug('[App] Slideshow state check failed (keeping current state):', error);
+      }
+    };
+    
+    // Poll for slideshow state every 2 seconds
+    fetchSlideshowState(); // Initial fetch
+    const slideshowInterval = setInterval(fetchSlideshowState, 2000);
+    
+    return () => {
+      clearInterval(interval);
+      clearInterval(revenueInterval);
+      clearInterval(sharePriceInterval);
+      clearInterval(proportionsInterval);
+      clearInterval(employeesInterval);
+      clearInterval(slideshowInterval);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('revenueDataUpdated', handleRevenueUpdate as EventListener);
+      window.removeEventListener('sharePriceDataUpdated', handleSharePriceUpdate as EventListener);
+      window.removeEventListener('chartProportionsUpdated', handleChartProportionsUpdate as EventListener);
+      window.removeEventListener('refreshSharePrice', handleRefreshSharePrice);
+      window.removeEventListener('revenueTrendsUpdated', handleRevenueTrendsUpdate as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let scrollInterval: NodeJS.Timeout;
+    let addPostInterval: NodeJS.Timeout;
+
+    // Auto scroll
+    scrollInterval = setInterval(() => {
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+        container.scrollTop = 0;
+      } else {
+        container.scrollTop += 1;
+      }
+    }, 40);
+
+    // Add new posts periodically
+    addPostInterval = setInterval(() => {
+      setPosts(prev => {
+        const newPost = linkedInPosts[Math.floor(Math.random() * linkedInPosts.length)];
+        return [...prev, { ...newPost, timeAgo: 'Just now' }];
+      });
+    }, 5000);
+
+    return () => {
+      clearInterval(scrollInterval);
+      clearInterval(addPostInterval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = scrollContainerRef2.current;
+    if (!container) return;
+
+    let scrollInterval: NodeJS.Timeout;
+    let addPostInterval: NodeJS.Timeout;
+
+    // Auto scroll
+    scrollInterval = setInterval(() => {
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+        container.scrollTop = 0;
+      } else {
+        container.scrollTop += 1;
+      }
+    }, 40);
+
+    // Add new posts periodically
+    addPostInterval = setInterval(() => {
+      setCrossBorderPostsList(prev => {
+        const newPost = crossBorderPosts[Math.floor(Math.random() * crossBorderPosts.length)];
+        return [...prev, { ...newPost, timeAgo: 'Just now' }];
+      });
+    }, 5000);
+
+    return () => {
+      clearInterval(scrollInterval);
+      clearInterval(addPostInterval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = milestonesScrollRef.current;
+    if (!container) return;
+
+    let scrollInterval: NodeJS.Timeout;
+
+    // Auto scroll vertically
+    scrollInterval = setInterval(() => {
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+        container.scrollTop = 0;
+      } else {
+        container.scrollTop += 1;
+      }
+    }, 40);
+
+    // Employee milestones are now fetched from API only - no auto-adding
+
+    return () => {
+      clearInterval(scrollInterval);
+    };
+  }, []);
+
+  // If slideshow is active, show only the slideshow
+  if (slideshowState.is_active && slideshowState.file_url) {
+    console.log('[App] Rendering slideshow - Active:', slideshowState.is_active, 'URL:', slideshowState.file_url);
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999 }}>
+        <FullScreenSlideshow 
+          fileUrl={slideshowState.file_url}
+          onClose={async () => {
+            // When slideshow is closed from frontend, stop it on backend
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            try {
+              await axios.post(`${API_BASE_URL}/api/admin/slideshow/stop-dev`);
+            } catch (error) {
+              console.error('Failed to stop slideshow from frontend:', error);
+            }
+            setSlideshowState({ is_active: false, file_url: null, file_name: null });
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-8" style={{ 
+      backgroundImage: `url(${backgroundPattern})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundAttachment: 'fixed'
+    }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <img src={corpayLogo} alt="Corpay" className="h-10 brightness-0 invert" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Main Content - 3 columns */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Top Row - Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {/* Total Revenue and Share Price - Stacked */}
+            <div className="md:col-span-1 flex flex-col gap-4">
+              {/* Total Revenue - Half height */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">Total Revenue</p>
+                </div>
+                <p style={{ fontWeight: 700, color: 'rgb(152, 18, 57)', fontSize: '28px', lineHeight: '1', marginBottom: '4px' }}>
+                  ${revenue.total_amount > 0 ? (revenue.total_amount / 1000000).toFixed(0) : '0'}M
+                </p>
+                <p className="text-xs" style={{ color: '#0085C2', fontWeight: 600 }}>
+                  ▲ {revenue.percentage_change.toFixed(1)}% vs last month
+                </p>
+              </div>
+
+              {/* Share Price - Fills remaining space */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col justify-center">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-gray-500">Corpay Share Price</p>
+                </div>
+                <p style={{ fontWeight: 700, color: '#230C18', fontSize: '28px', lineHeight: '1', marginBottom: '8px' }}>
+                  ₹ {sharePrice.price > 0 ? sharePrice.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                </p>
+                <div className="flex items-center gap-1">
+                  <span style={{ color: '#0085C2', fontSize: '16px', fontWeight: 600 }}>
+                    ▲ {sharePrice.change_percentage >= 0 ? '+' : ''}{sharePrice.change_percentage.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Revenue Proportions */}
+            <div className="md:col-span-2 bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+              <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Revenue Proportions</p>
+                <div className="flex items-center justify-between gap-6 px-4">
+                <ResponsiveContainer width={130} height={130}>
+                  <PieChart>
+                    <Pie
+                      data={revenueProportions}
+                      cx={65}
+                      cy={65}
+                      innerRadius={40}
+                      outerRadius={60}
+                      paddingAngle={3}
+                      dataKey="percentage"
+                    >
+                      {revenueProportions.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2 flex-1">
+                  {revenueProportions.map((item) => (
+                    <div key={item.category} className="flex items-center justify-between gap-3 p-2 rounded" style={{ backgroundColor: '#fafafa' }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: item.color }}></div>
+                        <span className="text-sm" style={{ color: '#3D1628', fontWeight: 600 }}>{item.category}</span>
+                      </div>
+                      <span style={{ color: '#3D1628', fontWeight: 700, fontSize: '15px' }}>{item.percentage}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Revenue Trend */}
+            <div className="md:col-span-2 bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Revenue Trends</p>
+                <div className="flex items-center gap-2">
+                  <div className="px-3 py-1.5 rounded-full" style={{ background: 'linear-gradient(135deg, #981239 0%, #BE1549 100%)', color: 'white', fontSize: '13px', fontWeight: 700 }}>
+                    ${(revenue.total_amount / 1000000).toFixed(0)}M
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 flex items-center justify-center px-2">
+                <ResponsiveContainer width="95%" height={100}>
+                  <BarChart data={revenueTrends} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis 
+                      dataKey="month" 
+                      tick={{ fontSize: 10, fill: '#3D1628', fontWeight: 600 }}
+                      axisLine={{ strokeWidth: 2, stroke: '#3D1628' }}
+                      tickLine={false}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 10, fill: '#3D1628', fontWeight: 600 }}
+                      axisLine={{ strokeWidth: 2, stroke: '#3D1628' }}
+                      tickLine={false}
+                      // Auto‑scale from 0 up to the maximum
+                      // value coming from the Excel / API data
+                      domain={[0, 'dataMax']}
+                    />
+                    <Bar
+                      dataKey="value"
+                      radius={[4, 4, 0, 0]}
+                      shape={(props: any) => {
+                        const { x, y, width, height, payload } = props;
+                        const month = payload.month;
+                        const rank = topThreeMonthsByValue.indexOf(month);
+
+                        // Corpay color palette for top 3 bars
+                        let fillColor = '#E6E8E7'; // default
+                        if (rank === 0) {
+                          fillColor = '#981239'; // deep Corpay pink - highest
+                        } else if (rank === 1) {
+                          fillColor = '#3D1628'; // dark Corpay plum - second highest
+                        } else if (rank === 2) {
+                          fillColor = '#BE1549'; // lighter Corpay pink - third highest
+                        }
+
+                        return (
+                          <rect
+                            x={x}
+                            y={y}
+                            width={width}
+                            height={height}
+                            fill={fillColor}
+                            rx={4}
+                            ry={4}
+                          />
+                        );
+                      }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Second Row */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {/* Employee Milestones */}
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col md:col-span-3" style={{ height: '400px' }}>
+              <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Employee Milestones</p>
+              <div ref={milestonesScrollRef} className="overflow-y-auto flex-1 space-y-3 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {milestonesList.map((milestone, index) => (
+                  <EmployeeMilestone 
+                    key={index}
+                    name={milestone.name}
+                    description={milestone.description}
+                    avatar={milestone.avatar}
+                    borderColor={milestone.borderColor}
+                    backgroundColor={milestone.backgroundColor}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Right Column - Stacked Boxes */}
+            <div className="md:col-span-2 space-y-4" style={{ height: '400px' }}>
+              {/* Payments Processed Today */}
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col" style={{ height: '192px' }}>
+                <div className="flex items-center justify-between mb-4">
+                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Payments Processed Today</p>
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0085C2' }}></div>
+                </div>
+                <div className="flex items-center justify-center flex-1 gap-8">
+                  {/* Today's Payments */}
+                  <div className="text-center space-y-2 flex-1">
+                    <p className="text-gray-500" style={{ fontSize: '11px', fontWeight: 500 }}>Amount Processed</p>
+                    <p style={{ fontWeight: 700, color: 'rgb(152, 18, 57)', fontSize: '32px', lineHeight: '1' }}>
+                      ₹{(payments.amount_processed / 10000000).toFixed(1)} Cr
+                    </p>
+                  </div>
+
+                  {/* Vertical Divider */}
+                  <div className="w-px h-16" style={{ backgroundColor: '#E6E8E7' }}></div>
+
+                  {/* Transactions */}
+                  <div className="text-center space-y-2 flex-1">
+                    <p className="text-gray-500" style={{ fontSize: '11px', fontWeight: 500 }}>Transactions</p>
+                    <p style={{ fontWeight: 700, color: '#230C18', fontSize: '32px', lineHeight: '1' }}>
+                      {payments.transaction_count.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Performance / Uptime */}
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col" style={{ height: '192px' }}>
+                <div className="flex items-center justify-between mb-4">
+                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>System Performance</p>
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0085C2' }}></div>
+                </div>
+                <div className="flex items-center justify-center flex-1 gap-8">
+                  {/* System Uptime */}
+                  <div className="text-center space-y-2 flex-1">
+                    <p className="text-gray-500" style={{ fontSize: '11px', fontWeight: 500 }}>System Uptime</p>
+                    <p style={{ fontWeight: 700, color: '#230C18', fontSize: '32px', lineHeight: '1' }}>
+                      {systemPerformance.uptime_percentage.toFixed(3)}%
+                    </p>
+                  </div>
+
+                  {/* Vertical Divider */}
+                  <div className="w-px h-16" style={{ backgroundColor: '#E6E8E7' }}></div>
+
+                  {/* Payment Success Rate */}
+                  <div className="text-center space-y-2 flex-1">
+                    <p className="text-gray-500" style={{ fontSize: '11px', fontWeight: 500 }}>Success Rate</p>
+                    <p style={{ fontWeight: 700, color: '#981239', fontSize: '32px', lineHeight: '1' }}>
+                      {systemPerformance.success_rate.toFixed(2)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Third Row - Case Studies and Resources share the right column */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            {/* Corpay Newsroom */}
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
+              <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Corpay Newsroom</p>
+              <div className="space-y-3 flex-1 overflow-y-auto">
+                {newsroomItems.map((item, index) => (
+                  <CompanyAnnouncement
+                    key={index}
+                    title={item.title}
+                    date={item.date || ''}
+                    description={item.excerpt || ''}
+                    badge={item.category ? { text: item.category, type: 'upcoming' } : undefined}
+                    backgroundColor="#f7fcff"
+                    link={item.url}
+                  />
+                ))}
+                {newsroomItems.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    Latest Corpay newsroom items will appear here once available.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right column: Case Studies with Resources directly below */}
+            <div className="flex flex-col gap-4">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
+                <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Case Studies</p>
+                <div className="flex gap-4 overflow-x-auto">
+                  <NewsroomCard 
+                    title="Corpay Announces Record Q3 Earnings"
+                    image="https://images.unsplash.com/photo-1606836591695-4d58a73eba1e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMG1lZXRpbmclMjBvZmZpY2V8ZW58MXx8fHwxNzYzMzUzMTI2fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+                  />
+                  <NewsroomCard 
+                    title="Innovation in Fintech: A Deep Dive"
+                    image="https://images.unsplash.com/photo-1707075891545-41b982930351?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmaW50ZWNoJTIwdGVjaG5vbG9neXxlbnwxfHx8fDE3NjM0MDUxOTV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
+                <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Resources</p>
+                <div>
+                  {(resourceItems.length > 0 ? resourceItems.slice(0, 4) : [
+                    {
+                      title: 'Case Study: Global Transport Inc.',
+                      excerpt: 'How we streamlined their fleet payments.',
+                    },
+                    {
+                      title: 'Whitepaper: Digital Transformation',
+                      excerpt: 'Key strategies for enterprise success.',
+                    },
+                  ]).map((item, index) => (
+                    <ResourceCard
+                      key={index}
+                      title={item.title}
+                      description={item.excerpt || ''}
+                      // Alternate type for simple visual variety; content is text‑only
+                      type={index % 2 === 0 ? 'case-study' : 'whitepaper'}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* LinkedIn Posts Column - Auto Scrolling */}
+        <div className="lg:col-span-1 flex flex-col gap-6">
+
+          {/* Corpay Cross-Border Posts */}
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col h-[400px]">
+            <p className="mb-4" style={{ fontWeight: 700, color: '#981239', fontSize: '18px' }}>Corpay Cross-Border Posts</p>
+            <div ref={scrollContainerRef2} className="overflow-y-auto scrollbar-hide flex-1" style={{ 
+              scrollbarWidth: 'none', 
+              msOverflowStyle: 'none'
+            }}>
+              {crossBorderPostsList.map((post, index) => (
+                <LinkedInPostCard 
+                  key={index}
+                  author={post.author}
+                  timeAgo={post.timeAgo}
+                  content={post.content}
+                  image={post.image}
+                  likes={post.likes || 0}
+                  comments={post.comments || 0}
+                  isCorpayBrand={true}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Corpay Posts */}
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col h-[480px]"> 
+            <p className="mb-4" style={{ fontWeight: 700, color: '#981239', fontSize: '18px' }}>Corpay Posts</p> 
+            <div ref={scrollContainerRef} className="overflow-y-auto scrollbar-hide flex-1" style={{ 
+              scrollbarWidth: 'none', 
+              msOverflowStyle: 'none'
+            }}> 
+              {posts.map((post, index) => ( 
+                <LinkedInPostCard 
+                  key={index} 
+                  author={post.author} 
+                  timeAgo={post.timeAgo} 
+                  content={post.content} 
+                  image={post.image}
+                  likes={post.likes || 0}
+                  comments={post.comments || 0}
+                /> 
+              ))} 
+            </div> 
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

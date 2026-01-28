@@ -1,0 +1,193 @@
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.orm import Session
+from typing import List
+from app.database import get_db
+from app.models.employees import EmployeeMilestone
+from app.models.file_upload import FileUpload, FileType
+from app.schemas.employees import EmployeeMilestoneCreate, EmployeeMilestoneResponse
+from app.utils.auth import get_current_admin_user
+from app.utils.file_handler import save_uploaded_file, get_file_size_mb
+from app.services.excel_parser import ExcelParser
+from app.models.user import User
+
+router = APIRouter(prefix="/api/admin/employees", tags=["admin-employees"])
+
+
+@router.post("/dev", response_model=EmployeeMilestoneResponse)
+async def create_employee_milestone_dev(
+    milestone: EmployeeMilestoneCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new employee milestone (development mode - no auth required)"""
+    db_milestone = EmployeeMilestone(**milestone.dict())
+    db.add(db_milestone)
+    db.commit()
+    db.refresh(db_milestone)
+    return db_milestone
+
+
+@router.post("", response_model=EmployeeMilestoneResponse)
+async def create_employee_milestone(
+    milestone: EmployeeMilestoneCreate,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new employee milestone"""
+    db_milestone = EmployeeMilestone(**milestone.dict())
+    db.add(db_milestone)
+    db.commit()
+    db.refresh(db_milestone)
+    return db_milestone
+
+
+@router.get("/dev", response_model=List[EmployeeMilestoneResponse])
+async def list_employee_milestones_dev(
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """List all employee milestones (development mode - no auth required)"""
+    milestones = db.query(EmployeeMilestone).filter(
+        EmployeeMilestone.is_active == 1
+    ).order_by(EmployeeMilestone.milestone_date.desc()).limit(limit).all()
+    return milestones
+
+
+@router.get("", response_model=List[EmployeeMilestoneResponse])
+async def list_employee_milestones(
+    limit: int = 50,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """List all employee milestones"""
+    milestones = db.query(EmployeeMilestone).filter(
+        EmployeeMilestone.is_active == 1
+    ).order_by(EmployeeMilestone.milestone_date.desc()).limit(limit).all()
+    return milestones
+
+
+@router.post("/upload")
+async def upload_employee_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Upload employee data Excel file"""
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="File must be Excel format")
+    
+    file_path = save_uploaded_file(file, "employees")
+    file_size = get_file_size_mb(file_path)
+    
+    file_upload = FileUpload(
+        original_filename=file.filename,
+        stored_path=file_path,
+        file_type=FileType.EMPLOYEE_DATA,
+        file_size=int(file_size * 1024 * 1024),
+        uploaded_by=current_user.email
+    )
+    db.add(file_upload)
+    
+    try:
+        parser = ExcelParser()
+        employees = parser.parse_employee_file(f"uploads/{file_path}")
+        
+        for emp_data in employees:
+            milestone = EmployeeMilestone(**emp_data)
+            db.add(milestone)
+        
+        file_upload.processed = 1
+        db.commit()
+        
+        return {"message": f"Processed {len(employees)} employee milestones", "file_id": file_upload.id}
+    
+    except Exception as e:
+        file_upload.error_message = str(e)
+        db.commit()
+        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
+
+
+@router.post("/upload-photo-dev")
+async def upload_employee_photo_dev(
+    file: UploadFile = File(...),
+    employee_id: int = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Upload employee photo (development mode - no auth required)"""
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    file_path = save_uploaded_file(file, "employee-photos")
+    
+    # If employee_id is provided and > 0, update the milestone
+    if employee_id > 0:
+        milestone = db.query(EmployeeMilestone).filter(EmployeeMilestone.id == employee_id).first()
+        if milestone:
+            milestone.avatar_path = file_path
+            db.commit()
+    
+    return {"message": "Photo uploaded successfully", "avatar_path": file_path}
+
+
+@router.post("/upload-photo")
+async def upload_employee_photo(
+    file: UploadFile = File(...),
+    employee_id: int = Form(0),
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Upload employee photo"""
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    file_path = save_uploaded_file(file, "employee-photos")
+    
+    # If employee_id is provided and > 0, update the milestone
+    if employee_id > 0:
+        milestone = db.query(EmployeeMilestone).filter(EmployeeMilestone.id == employee_id).first()
+        if not milestone:
+            raise HTTPException(status_code=404, detail="Employee milestone not found")
+        
+        file_upload = FileUpload(
+            original_filename=file.filename,
+            stored_path=file_path,
+            file_type=FileType.EMPLOYEE_PHOTO,
+            uploaded_by=current_user.email
+        )
+        db.add(file_upload)
+        
+        milestone.avatar_path = file_path
+        db.commit()
+    
+    return {"message": "Photo uploaded successfully", "avatar_path": file_path}
+
+
+@router.delete("/dev/{milestone_id}")
+async def delete_milestone_dev(
+    milestone_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete an employee milestone (development mode - no auth required)"""
+    milestone = db.query(EmployeeMilestone).filter(EmployeeMilestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    milestone.is_active = 0
+    db.commit()
+    return {"message": "Milestone deleted successfully"}
+
+
+@router.delete("/{milestone_id}")
+async def delete_milestone(
+    milestone_id: int,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete an employee milestone (soft delete)"""
+    milestone = db.query(EmployeeMilestone).filter(EmployeeMilestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    milestone.is_active = 0
+    db.commit()
+    return {"message": "Milestone deleted successfully"}
+
