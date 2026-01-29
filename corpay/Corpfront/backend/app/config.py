@@ -7,8 +7,15 @@ class Settings(BaseSettings):
     # Database - Supabase PostgreSQL connection string
     # Format: postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
     # Or use connection pooler: postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
-    # Get your connection string from: https://app.supabase.com/project/YOUR_PROJECT/settings/database
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./dashboard.db")
+    # Get your connection string from: https://app.supabase.com/project/YOUR_PROJECT/settings/databa
+
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./dashboard.db").replace("DATABASE_URL=", "")
+
+    
+    # Supabase Configuration
+    supabase_url: str = os.getenv("SUPABASE_URL", "")
+    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_KEY", "")
+    supabase_storage_bucket: str = os.getenv("SUPABASE_STORAGE_BUCKET", "slides")
     
     # JWT
     jwt_secret_key: str = "your-secret-key-here-change-in-production"

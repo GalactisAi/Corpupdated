@@ -81,3 +81,43 @@ async def get_current_user_info(
 ):
     """Get current authenticated user info"""
     return current_user
+
+
+@router.post("/create-admin-dev")
+async def create_admin_dev(db: Session = Depends(get_db)):
+    """Development endpoint to create/reset admin user (no auth required for dev)"""
+    try:
+        password = "Cadmin@1"
+        password_hash = get_password_hash(password)
+        
+        # Check if admin user exists
+        admin_user = db.query(User).filter(User.email == "admin@corpay.com").first()
+        if not admin_user:
+            # Create admin user
+            admin_user = User(
+                email="admin@corpay.com",
+                name="Admin User",
+                password_hash=password_hash,
+                is_admin=1
+            )
+            db.add(admin_user)
+            message = "Admin user created"
+        else:
+            # Update password and ensure is_admin is set
+            admin_user.password_hash = password_hash
+            admin_user.is_admin = 1
+            message = "Admin user password updated"
+        
+        db.commit()
+        return {
+            "success": True,
+            "message": message,
+            "email": "admin@corpay.com",
+            "password": "Cadmin@1"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create/update admin user: {str(e)}"
+        )

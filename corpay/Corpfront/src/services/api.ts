@@ -22,5 +22,6 @@ export const dashboardApi = {
   getSystemPerformance: () => api.get('/dashboard/system-performance'),
   getNewsroom: (limit = 5) => api.get('/dashboard/newsroom', { params: { limit } }),
   getResourcesNewsroom: (limit = 4) => api.get('/dashboard/resources-newsroom', { params: { limit } }),
+  getCardTitles: () => api.get('/dashboard/card-titles'),
 }
 

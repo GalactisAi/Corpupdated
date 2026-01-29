@@ -5,18 +5,68 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 import asyncio
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
 from app.api import dashboard, auth, revenue, posts, employees, payments, system, config, slideshow
 from app.api import linkedin_auth, linkedin_auth
 from app.services.linkedin_sync import run_periodic_sync
+from app.models.user import User
+import bcrypt
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+def init_default_admin():
+    """Initialize default admin user - always ensure it exists with correct password."""
+    db = SessionLocal()
+    try:
+        # Hash the default password: Cadmin@1
+        password = "Cadmin@1"
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+        # Delete existing admin user to ensure clean state
+        db.query(User).filter(User.email == "admin@corpay.com").delete()
+        db.commit()
+
+        # Create admin user with correct credentials
+        admin_user = User(
+            email="admin@corpay.com",
+            name="Admin User",
+            password_hash=password_hash,
+            is_admin=1,
+        )
+        db.add(admin_user)
+        db.commit()
+
+        # Verify it was created correctly
+        verify_user = db.query(User).filter(User.email == "admin@corpay.com").first()
+        if verify_user:
+            is_valid = bcrypt.checkpw(
+                password.encode("utf-8"),
+                verify_user.password_hash.encode("utf-8"),
+            )
+            if is_valid:
+                print("Admin user ready: admin@corpay.com / Cadmin@1")
+            else:
+                print("WARNING: Admin user password verification failed")
+        else:
+            print("WARNING: Admin user was not created")
+
+    except Exception as e:
+        print(f"ERROR: Could not initialize default admin user: {e}")
+        import traceback
+
+        traceback.print_exc()
+        db.rollback()
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan - start background tasks on startup"""
+    # Initialize default admin user
+    init_default_admin()
+    
     # Start background task for LinkedIn sync
     sync_task = asyncio.create_task(run_periodic_sync(interval_minutes=30))
     

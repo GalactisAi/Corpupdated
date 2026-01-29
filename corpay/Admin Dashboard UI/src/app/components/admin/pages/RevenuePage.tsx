@@ -23,6 +23,22 @@ export function RevenuePage() {
   const [manualSharePriceChange, setManualSharePriceChange] = useState('');
   const [isSavingSharePrice, setIsSavingSharePrice] = useState(false);
   
+  // Payments manual entry state
+  const [paymentCardTitle, setPaymentCardTitle] = useState(
+    localStorage.getItem('paymentCardTitle') || 'Payments Processed Today'
+  );
+  const [manualPaymentAmount, setManualPaymentAmount] = useState('');
+  const [manualPaymentTransactions, setManualPaymentTransactions] = useState('');
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  
+  // System performance manual entry state
+  const [systemPerformanceCardTitle, setSystemPerformanceCardTitle] = useState(
+    localStorage.getItem('systemPerformanceCardTitle') || 'System Performance'
+  );
+  const [manualUptime, setManualUptime] = useState('');
+  const [manualSuccessRate, setManualSuccessRate] = useState('');
+  const [isSavingSystem, setIsSavingSystem] = useState(false);
+  
   // Share price state
   const [sharePrice, setSharePrice] = useState<{ price: number; change: number; changePercent: number; timestamp: string } | null>(null);
   const [isLoadingSharePrice, setIsLoadingSharePrice] = useState(false);
@@ -49,6 +65,68 @@ export function RevenuePage() {
   const [isSlideshowActive, setIsSlideshowActive] = useState(false);
   const [uploadedPptUrl, setUploadedPptUrl] = useState<string | null>(null);
   const [isUploadingPpt, setIsUploadingPpt] = useState(false);
+
+  // Persist editable card titles locally
+  useEffect(() => {
+    localStorage.setItem('paymentCardTitle', paymentCardTitle);
+  }, [paymentCardTitle]);
+
+  useEffect(() => {
+    localStorage.setItem('systemPerformanceCardTitle', systemPerformanceCardTitle);
+  }, [systemPerformanceCardTitle]);
+  
+  // Load card titles from backend config on mount
+  useEffect(() => {
+    const loadCardTitlesFromBackend = async () => {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/admin/config`, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 10000,
+        });
+        const data = response.data || {};
+        if (data.dashboard_payments_title) {
+          setPaymentCardTitle(data.dashboard_payments_title);
+        }
+        if (data.dashboard_system_title) {
+          setSystemPerformanceCardTitle(data.dashboard_system_title);
+        }
+      } catch (error) {
+        console.error('Failed to load card titles from backend config:', error);
+      }
+    };
+
+    loadCardTitlesFromBackend();
+  }, []);
+
+  const saveCardTitlesToBackend = async () => {
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      await axios.put(
+        `${API_BASE_URL}/api/admin/config`,
+        {
+          dashboard_payments_title: paymentCardTitle,
+          dashboard_system_title: systemPerformanceCardTitle,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: 10000,
+        }
+      );
+    } catch (error) {
+      console.error('Failed to save card titles to backend config:', error);
+      toast.error('Failed to save card titles to backend');
+    }
+  };
   
   // Handle PPT file upload to backend
   const handlePptFileSelect = async (file: File | null) => {
@@ -807,6 +885,124 @@ export function RevenuePage() {
     }
   };
 
+  const handlePaymentEntry = async () => {
+    if (!manualPaymentAmount || !manualPaymentTransactions) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsSavingPayment(true);
+    const today = new Date().toISOString().split('T')[0];
+    const paymentData = {
+      amount_processed: parseFloat(manualPaymentAmount) * 10000000, // Convert Cr to actual amount
+      transaction_count: parseInt(manualPaymentTransactions),
+      date: today
+    };
+
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 3000 });
+    } catch (healthError: any) {
+      toast.error(`Backend not reachable at ${API_BASE_URL}. Please ensure the backend server is running.`);
+      setIsSavingPayment(false);
+      return;
+    }
+
+    try {
+      let response;
+      try {
+        response = await axios.post(
+          `${API_BASE_URL}/api/admin/payments`,
+          paymentData,
+          { headers, timeout: 10000 }
+        );
+      } catch (authError: any) {
+        if (authError.response?.status === 401 || authError.response?.status === 403) {
+          toast.error('Authentication required. Please log in.');
+          setIsSavingPayment(false);
+          return;
+        }
+        throw authError;
+      }
+
+      toast.success('Payment data saved successfully');
+      setManualPaymentAmount('');
+      setManualPaymentTransactions('');
+      setIsSavingPayment(false);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to save payment data';
+      toast.error(`Error: ${errorMessage}`);
+      setIsSavingPayment(false);
+    }
+  };
+
+  const handleSystemPerformanceEntry = async () => {
+    if (!manualUptime || !manualSuccessRate) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsSavingSystem(true);
+    const systemData = {
+      uptime_percentage: parseFloat(manualUptime),
+      success_rate: parseFloat(manualSuccessRate)
+    };
+
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 3000 });
+    } catch (healthError: any) {
+      toast.error(`Backend not reachable at ${API_BASE_URL}. Please ensure the backend server is running.`);
+      setIsSavingSystem(false);
+      return;
+    }
+
+    try {
+      let response;
+      try {
+        response = await axios.post(
+          `${API_BASE_URL}/api/admin/system`,
+          systemData,
+          { headers, timeout: 10000 }
+        );
+      } catch (authError: any) {
+        if (authError.response?.status === 401 || authError.response?.status === 403) {
+          toast.error('Authentication required. Please log in.');
+          setIsSavingSystem(false);
+          return;
+        }
+        throw authError;
+      }
+
+      toast.success('System performance data saved successfully');
+      setManualUptime('');
+      setManualSuccessRate('');
+      setIsSavingSystem(false);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to save system performance data';
+      toast.error(`Error: ${errorMessage}`);
+      setIsSavingSystem(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -965,6 +1161,118 @@ export function RevenuePage() {
                   className="w-full bg-pink-600 hover:bg-pink-700"
                 >
                   {isSavingSharePrice ? 'Saving...' : 'Save Share Price Data'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Payments Processed Today Entry Card */}
+            <Card className="bg-white/10 border-white/20">
+              <CardHeader>
+                <CardTitle className="text-white">{paymentCardTitle}</CardTitle>
+                <CardDescription className="text-gray-400">
+                  Enter today's payment data manually for quick updates
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="paymentCardTitle" className="text-white">Card Title</Label>
+                  <Input
+                    id="paymentCardTitle"
+                    type="text"
+                    value={paymentCardTitle}
+                    onChange={(e) => setPaymentCardTitle(e.target.value)}
+                    onBlur={saveCardTitlesToBackend}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="paymentAmount" className="text-white">Amount Processed (in Crores)</Label>
+                  <Input
+                    id="paymentAmount"
+                    type="number"
+                    step="0.1"
+                    value={manualPaymentAmount}
+                    onChange={(e) => setManualPaymentAmount(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Enter value in crores (e.g., 42.8 for ₹42.8 Cr)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="paymentTransactions" className="text-white">Transaction Count</Label>
+                  <Input
+                    id="paymentTransactions"
+                    type="number"
+                    value={manualPaymentTransactions}
+                    onChange={(e) => setManualPaymentTransactions(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                </div>
+
+                <Button 
+                  onClick={handlePaymentEntry}
+                  disabled={isSavingPayment}
+                  className="w-full bg-pink-600 hover:bg-pink-700"
+                >
+                  {isSavingPayment ? 'Saving...' : 'Save Payment Data'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* System Performance Entry Card */}
+            <Card className="bg-white/10 border-white/20">
+              <CardHeader>
+                <CardTitle className="text-white">{systemPerformanceCardTitle}</CardTitle>
+                <CardDescription className="text-gray-400">
+                  Enter system performance metrics manually for quick updates
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="systemPerformanceCardTitle" className="text-white">Card Title</Label>
+                  <Input
+                    id="systemPerformanceCardTitle"
+                    type="text"
+                    value={systemPerformanceCardTitle}
+                    onChange={(e) => setSystemPerformanceCardTitle(e.target.value)}
+                    onBlur={saveCardTitlesToBackend}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="uptime" className="text-white">System Uptime (%)</Label>
+                  <Input
+                    id="uptime"
+                    type="number"
+                    step="0.001"
+                    value={manualUptime}
+                    onChange={(e) => setManualUptime(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Enter uptime percentage (e.g., 99.985)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="successRate" className="text-white">Success Rate (%)</Label>
+                  <Input
+                    id="successRate"
+                    type="number"
+                    step="0.01"
+                    value={manualSuccessRate}
+                    onChange={(e) => setManualSuccessRate(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Enter success rate percentage (e.g., 99.62)</p>
+                </div>
+
+                <Button 
+                  onClick={handleSystemPerformanceEntry}
+                  disabled={isSavingSystem}
+                  className="w-full bg-pink-600 hover:bg-pink-700"
+                >
+                  {isSavingSystem ? 'Saving...' : 'Save System Performance Data'}
                 </Button>
               </CardContent>
             </Card>

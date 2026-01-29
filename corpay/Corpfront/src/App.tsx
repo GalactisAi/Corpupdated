@@ -231,6 +231,13 @@ export default function App() {
     category?: string;
     excerpt?: string;
   }>>([]);
+  const [cardTitles, setCardTitles] = useState<{
+    payments: string;
+    systemPerformance: string;
+  }>({
+    payments: 'Payments Processed Today',
+    systemPerformance: 'System Performance',
+  });
   
   // Slideshow state
   const [slideshowState, setSlideshowState] = useState<{
@@ -291,6 +298,19 @@ export default function App() {
           console.error('[Revenue] Failed to parse localStorage:', e);
         }
       }
+    }
+  };
+
+  const fetchCardTitles = async () => {
+    try {
+      const res = await dashboardApi.getCardTitles();
+      const data = res.data || {};
+      setCardTitles({
+        payments: data.payments_title || 'Payments Processed Today',
+        systemPerformance: data.system_performance_title || 'System Performance',
+      });
+    } catch (error) {
+      console.error('[CardTitles] Error fetching from API:', error);
     }
   };
 
@@ -441,10 +461,24 @@ export default function App() {
           setMilestonesList([]);
         }
         if (paymentsRes.status === 'fulfilled') {
-          setPayments(paymentsRes.value.data);
+          console.log('[Initial Load] Payments data from API:', paymentsRes.value.data);
+          const paymentsData = paymentsRes.value.data || {};
+          setPayments({
+            amount_processed: Number(paymentsData.amount_processed) || 428000000,
+            transaction_count: Number(paymentsData.transaction_count) || 19320
+          });
+        } else {
+          console.warn('[Initial Load] Payments API failed:', paymentsRes.reason);
         }
         if (systemRes.status === 'fulfilled') {
-          setSystemPerformance(systemRes.value.data);
+          console.log('[Initial Load] System performance data from API:', systemRes.value.data);
+          const systemData = systemRes.value.data || {};
+          setSystemPerformance({
+            uptime_percentage: Number(systemData.uptime_percentage) || 99.985,
+            success_rate: Number(systemData.success_rate) || 99.62
+          });
+        } else {
+          console.warn('[Initial Load] System performance API failed:', systemRes.reason);
         }
         if (newsroomRes.status === 'fulfilled') {
           // #region agent log
@@ -494,6 +528,7 @@ export default function App() {
     };
 
     fetchData();
+    fetchCardTitles();
     
     // Refresh data every 5 minutes
     const interval = setInterval(fetchData, 5 * 60 * 1000);
@@ -556,6 +591,55 @@ export default function App() {
     const sharePriceInterval = setInterval(() => {
       fetchSharePriceData();
     }, 3000);
+
+    // Function to fetch payments data
+    const fetchPaymentsData = async () => {
+      try {
+        console.log('[Payments] Fetching from API...');
+        const paymentsRes = await dashboardApi.getPayments();
+        console.log('[Payments] API Response:', paymentsRes);
+        const paymentsData = paymentsRes.data || {};
+        const newPayments = {
+          amount_processed: Number(paymentsData.amount_processed) || 428000000,
+          transaction_count: Number(paymentsData.transaction_count) || 19320
+        };
+        console.log('[Payments] Setting state to:', newPayments);
+        setPayments(newPayments);
+      } catch (error) {
+        console.error('[Payments] Error fetching from API:', error);
+      }
+    };
+
+    // Function to fetch system performance data
+    const fetchSystemPerformanceData = async () => {
+      try {
+        console.log('[SystemPerformance] Fetching from API...');
+        const systemRes = await dashboardApi.getSystemPerformance();
+        console.log('[SystemPerformance] API Response:', systemRes);
+        const systemData = systemRes.data || {};
+        const newSystemPerformance = {
+          uptime_percentage: Number(systemData.uptime_percentage) || 99.985,
+          success_rate: Number(systemData.success_rate) || 99.62
+        };
+        console.log('[SystemPerformance] Setting state to:', newSystemPerformance);
+        setSystemPerformance(newSystemPerformance);
+      } catch (error) {
+        console.error('[SystemPerformance] Error fetching from API:', error);
+      }
+    };
+
+    // Immediately fetch payments and system performance data on mount
+    fetchPaymentsData();
+    fetchSystemPerformanceData();
+
+    // Refresh payments and system performance data every 5 seconds to catch updates immediately
+    const paymentsInterval = setInterval(() => {
+      fetchPaymentsData();
+    }, 5000);
+
+    const systemPerformanceInterval = setInterval(() => {
+      fetchSystemPerformanceData();
+    }, 5000);
     
     // Listen for manual refresh event
     const handleRefreshSharePrice = () => {
@@ -785,6 +869,8 @@ export default function App() {
       clearInterval(proportionsInterval);
       clearInterval(employeesInterval);
       clearInterval(slideshowInterval);
+      clearInterval(paymentsInterval);
+      clearInterval(systemPerformanceInterval);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('revenueDataUpdated', handleRevenueUpdate as EventListener);
       window.removeEventListener('sharePriceDataUpdated', handleSharePriceUpdate as EventListener);
@@ -1068,10 +1154,10 @@ export default function App() {
 
             {/* Right Column - Stacked Boxes */}
             <div className="md:col-span-2 space-y-4" style={{ height: '400px' }}>
-              {/* Payments Processed Today */}
+            {/* Payments Processed Today */}
               <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col" style={{ height: '192px' }}>
                 <div className="flex items-center justify-between mb-4">
-                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Payments Processed Today</p>
+                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>{cardTitles.payments}</p>
                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0085C2' }}></div>
                 </div>
                 <div className="flex items-center justify-center flex-1 gap-8">
@@ -1099,7 +1185,7 @@ export default function App() {
               {/* System Performance / Uptime */}
               <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col" style={{ height: '192px' }}>
                 <div className="flex items-center justify-between mb-4">
-                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>System Performance</p>
+                  <p style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>{cardTitles.systemPerformance}</p>
                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0085C2' }}></div>
                 </div>
                 <div className="flex items-center justify-center flex-1 gap-8">
