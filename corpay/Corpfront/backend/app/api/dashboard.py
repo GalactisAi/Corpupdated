@@ -21,6 +21,7 @@ from app.services.newsroom_scraper import (
     fetch_corpay_newsroom,
     fetch_corpay_resources_newsroom,
 )
+from app.utils.cache import get, set
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -287,10 +288,16 @@ async def get_newsroom_items(limit: int = 5) -> List[NewsroomItemResponse]:
     
     This simply proxies the public website [`https://www.corpay.com/corporate-newsroom?limit=10&years=&categories=&search=`]
     and returns a lightweight list of articles for display in the Corpfront UI.
+    Cached for 5 minutes to avoid slow external fetches on every request.
     """
+    cache_key = f"newsroom_{limit}"
+    cached = get(cache_key)
+    if cached is not None:
+        return cached
     items = await fetch_corpay_newsroom(limit=limit)
-    # Pydantic response_model will validate/serialize to NewsroomItemResponse
-    return [NewsroomItemResponse(**item) for item in items]
+    result = [NewsroomItemResponse(**item) for item in items]
+    set(cache_key, result, ttl_seconds=300)
+    return result
 
 
 @router.get("/resources-newsroom", response_model=List[NewsroomItemResponse])
@@ -300,7 +307,14 @@ async def get_resources_newsroom_items(limit: int = 4) -> List[NewsroomItemRespo
     
     Source: `https://www.corpay.com/resources/newsroom?page=2`
     Returns up to `limit` items, text-only (no images).
+    Cached for 5 minutes to avoid slow external fetches on every request.
     """
+    cache_key = f"resources_newsroom_{limit}"
+    cached = get(cache_key)
+    if cached is not None:
+        return cached
     items = await fetch_corpay_resources_newsroom(limit=limit)
-    return [NewsroomItemResponse(**item) for item in items]
+    result = [NewsroomItemResponse(**item) for item in items]
+    set(cache_key, result, ttl_seconds=300)
+    return result
 

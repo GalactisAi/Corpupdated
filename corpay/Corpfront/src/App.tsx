@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Linkedin } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { StatCard } from './components/StatCard';
@@ -13,6 +13,15 @@ import corpayLogo from './assets/895e861462df910e5a72623a9b8e8a744f2ab348.png';
 import crossBorderGlimpse from './assets/aaf95357c3595e79ededa176ac81f9fc76f886b5.png';
 import backgroundPattern from './assets/8a99135dee321789a4c9c35b37279ec88120fc47.png';
 import axios from 'axios';
+
+/** Extract a date string from title/excerpt when API doesn't return a separate date (e.g. "on February 4, 2026"). */
+function extractDateFromTitle(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  const m = text.match(
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/i
+  );
+  return m ? m[0].trim() : '';
+}
 
 const revenueData = [
   { month: 'Jan', value: 70 },
@@ -197,6 +206,10 @@ const employeeMilestones = [
 export default function App() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef2 = useRef<HTMLDivElement>(null);
+  const resourcesScrollRef = useRef<HTMLDivElement>(null);
+  const resourcesScrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const newsroomScrollRef = useRef<HTMLDivElement>(null);
+  const newsroomScrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const milestonesScrollRef = useRef<HTMLDivElement>(null);
   const fetchSharePriceDataRef = useRef<(() => Promise<void>) | null>(null);
   
@@ -244,10 +257,12 @@ export default function App() {
     is_active: boolean;
     file_url: string | null;
     file_name: string | null;
+    interval_seconds?: number;
   }>({
     is_active: false,
     file_url: null,
-    file_name: null
+    file_name: null,
+    interval_seconds: 5
   });
 
   // Top 3 months by revenue value for bar coloring
@@ -340,7 +355,7 @@ export default function App() {
           dashboardApi.getEmployees(20),
           dashboardApi.getPayments(),
           dashboardApi.getSystemPerformance(),
-          dashboardApi.getNewsroom(4),
+          dashboardApi.getNewsroom(12),
           dashboardApi.getResourcesNewsroom(4),
         ]);
 
@@ -837,7 +852,8 @@ export default function App() {
           const newState = {
             is_active: response.data.is_active || false,
             file_url: response.data.file_url || null,
-            file_name: response.data.file_name || null
+            file_name: response.data.file_name || null,
+            interval_seconds: response.data.interval_seconds ?? 5
           };
           // Always update to match backend state
           setSlideshowState(prev => {
@@ -962,13 +978,60 @@ export default function App() {
     };
   }, []);
 
+  // Resources auto-scroll (same as LinkedIn posts) - start after paint so ref and scrollHeight are set
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      const container = resourcesScrollRef.current;
+      if (!container || container.scrollHeight <= container.clientHeight) return;
+      resourcesScrollIntervalRef.current = setInterval(() => {
+        if (!container) return;
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+          container.scrollTop = 0;
+        } else {
+          container.scrollTop += 1;
+        }
+      }, 40);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (resourcesScrollIntervalRef.current) {
+        clearInterval(resourcesScrollIntervalRef.current);
+        resourcesScrollIntervalRef.current = null;
+      }
+    };
+  }, [resourceItems.length]);
+
+  // Newsroom auto-scroll (same as Resources) - start after paint
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      const container = newsroomScrollRef.current;
+      if (!container || container.scrollHeight <= container.clientHeight) return;
+      newsroomScrollIntervalRef.current = setInterval(() => {
+        if (!container) return;
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+          container.scrollTop = 0;
+        } else {
+          container.scrollTop += 1;
+        }
+      }, 40);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (newsroomScrollIntervalRef.current) {
+        clearInterval(newsroomScrollIntervalRef.current);
+        newsroomScrollIntervalRef.current = null;
+      }
+    };
+  }, [newsroomItems.length]);
+
   // If slideshow is active, show only the slideshow
   if (slideshowState.is_active && slideshowState.file_url) {
     console.log('[App] Rendering slideshow - Active:', slideshowState.is_active, 'URL:', slideshowState.file_url);
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999 }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#000' }}>
         <FullScreenSlideshow 
           fileUrl={slideshowState.file_url}
+          intervalSeconds={slideshowState.interval_seconds ?? 5}
           onClose={async () => {
             // When slideshow is closed from frontend, stop it on backend
             const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -985,12 +1048,13 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen p-8" style={{ 
+    <div className="min-h-full w-full p-8 box-border" style={{ 
       backgroundImage: `url(${backgroundPattern})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
-      backgroundAttachment: 'fixed'
+      backgroundAttachment: 'fixed',
+      backgroundColor: '#f5f5f5'
     }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -1212,33 +1276,50 @@ export default function App() {
             </div>
           </div>
 
-          {/* Third Row - Case Studies and Resources share the right column */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-            {/* Corpay Newsroom */}
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
-              <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Corpay Newsroom</p>
-              <div className="space-y-3 flex-1 overflow-y-auto">
+          {/* Third Row - Fixed row height so Newsroom matches Resources column; list scrolls inside */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch" style={{ height: '420px' }}>
+            {/* Corpay Newsroom - fills row height; list scrolls inside */}
+            <div className="min-h-0 flex flex-col h-full overflow-hidden">
+              <div
+                className="p-6 rounded-lg flex flex-col overflow-hidden flex-1 min-h-0 h-full"
+                style={{
+                  background: 'linear-gradient(180deg, #fef6f8 0%, #ffffff 100%)',
+                  boxShadow: '0 2px 12px rgba(152, 18, 57, 0.08)',
+                  border: '1px solid rgba(152, 18, 57, 0.15)',
+                }}
+              >
+                <div className="flex items-center gap-2 mb-4 shrink-0">
+                  <div className="w-1 h-6 rounded-full" style={{ backgroundColor: '#981239' }} />
+                  <p className="m-0" style={{ fontWeight: 700, color: '#981239', fontSize: '18px' }}>Corpay Newsroom</p>
+                </div>
+                <div
+                  ref={newsroomScrollRef}
+                  className="space-y-3 flex-1 min-h-0 overflow-y-auto newsroom-scroll pr-1"
+                  style={{ scrollbarGutter: 'stable' }}
+                >
                 {newsroomItems.map((item, index) => (
                   <CompanyAnnouncement
                     key={index}
                     title={item.title}
-                    date={item.date || ''}
+                    date={item.date?.trim() || extractDateFromTitle(item.title) || extractDateFromTitle(item.excerpt || '') || ''}
                     description={item.excerpt || ''}
-                    badge={item.category ? { text: item.category, type: 'upcoming' } : undefined}
-                    backgroundColor="#f7fcff"
+                    backgroundColor={index % 2 === 0 ? 'rgba(152, 18, 57, 0.08)' : 'rgba(61, 22, 40, 0.07)'}
                     link={item.url}
+                    accentBorder
+                    accentColor={index % 2 === 0 ? '#981239' : '#3D1628'}
                   />
                 ))}
                 {newsroomItems.length === 0 && (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm" style={{ color: '#3D1628', opacity: 0.8 }}>
                     Latest Corpay newsroom items will appear here once available.
                   </p>
                 )}
               </div>
+              </div>
             </div>
 
-            {/* Right column: Case Studies with Resources directly below */}
-            <div className="flex flex-col gap-4">
+            {/* Right column: Case Studies with Resources - fixed height so row height matches */}
+            <div className="flex flex-col gap-4 h-full min-h-[420px]">
               <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
                 <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Case Studies</p>
                 <div className="flex gap-4 overflow-x-auto">
@@ -1253,9 +1334,12 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
-                <p className="mb-4" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Resources</p>
-                <div>
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col overflow-hidden flex-1 min-h-0">
+                <p className="mb-3 shrink-0" style={{ fontWeight: 700, color: '#3D1628', fontSize: '18px' }}>Resources</p>
+                <div
+                  ref={resourcesScrollRef}
+                  className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 rounded space-y-4"
+                >
                   {(resourceItems.length > 0 ? resourceItems.slice(0, 4) : [
                     {
                       title: 'Case Study: Global Transport Inc.',

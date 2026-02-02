@@ -6,6 +6,7 @@ Source: `https://www.corpay.com/corporate-newsroom?limit=10&years=&categories=&s
 """
 from typing import List, Dict
 import json
+import re
 import time
 
 import httpx
@@ -49,7 +50,8 @@ async def fetch_corpay_newsroom(limit: int = 5) -> List[Dict]:
     _debug_log("newsroom-pre", "N1", "newsroom_scraper.py:fetch_corpay_newsroom:start",
                "Starting fetch_corpay_newsroom", {"limit": limit, "url": CORPAY_NEWSROOM_URL})
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    # 5s connect timeout (fail fast if unreachable), 10s read timeout
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=10.0)) as client:
       response = await client.get(CORPAY_NEWSROOM_URL)
       _debug_log("newsroom-pre", "N2", "newsroom_scraper.py:fetch_corpay_newsroom:response",
                  "Fetched newsroom HTML", {"status": response.status_code})
@@ -83,10 +85,53 @@ async def fetch_corpay_newsroom(limit: int = 5) -> List[Dict]:
       excerpt = ""
 
       if container:
-        # Date is usually in a <time> element.
+        # Date: prefer <time> text, then datetime attribute, then any element with date-like class/text.
         time_el = container.find("time")
         if time_el:
-          date_text = time_el.get_text(strip=True)
+          date_text = time_el.get_text(strip=True) or ""
+          if not date_text and time_el.get("datetime"):
+            # e.g. datetime="2025-01-15" -> "Jan 15, 2025"
+            try:
+              from datetime import datetime
+              dt = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00")[:10])
+              date_text = dt.strftime("%b %d, %Y")
+            except Exception:
+              date_text = time_el["datetime"][:10]
+        if not date_text:
+          for el in container.find_all(class_=re.compile(r"date|time|meta", re.I)):
+            t = (el.get_text(strip=True) or "").strip()
+            if t and re.search(r"\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}|\d{4}[\s/\-]\d{1,2}[\s/\-]\d{1,2}|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}", t):
+              date_text = t
+              break
+        if not date_text:
+          full_text = container.get_text(separator=" ", strip=True) or ""
+          m = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}", full_text)
+          if m:
+            date_text = m.group(0).strip()
+        # If still no date, search the block from this h2 up to the next h2 (siblings).
+        if not date_text:
+          sibling = h2.find_next_sibling()
+          next_h2 = h2.find_next("h2")
+          while sibling and sibling != next_h2:
+            time_el = sibling.find("time") if hasattr(sibling, "find") else None
+            if time_el:
+              date_text = time_el.get_text(strip=True) or ""
+              if not date_text and time_el.get("datetime"):
+                try:
+                  from datetime import datetime
+                  dt = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00")[:10])
+                  date_text = dt.strftime("%b %d, %Y")
+                except Exception:
+                  date_text = time_el["datetime"][:10]
+              if date_text:
+                break
+            if hasattr(sibling, "get_text"):
+              t = sibling.get_text(separator=" ", strip=True) or ""
+              m = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}", t)
+              if m:
+                date_text = m.group(0).strip()
+                break
+            sibling = sibling.find_next_sibling() if hasattr(sibling, "find_next_sibling") else None
 
         # Category label (e.g. "Press Releases") often appears in a nearby span/a.
         cat_el = container.find(
@@ -140,7 +185,8 @@ async def fetch_corpay_resources_newsroom(limit: int = 4) -> List[Dict]:
     _debug_log("resources-pre", "R1", "newsroom_scraper.py:fetch_corpay_resources_newsroom:start",
                "Starting fetch_corpay_resources_newsroom", {"limit": limit, "url": CORPAY_RESOURCES_NEWSROOM_URL})
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    # 5s connect timeout (fail fast if unreachable), 10s read timeout
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=10.0)) as client:
       response = await client.get(CORPAY_RESOURCES_NEWSROOM_URL)
       _debug_log("resources-pre", "R2", "newsroom_scraper.py:fetch_corpay_resources_newsroom:response",
                  "Fetched resources HTML", {"status": response.status_code})
@@ -172,6 +218,52 @@ async def fetch_corpay_resources_newsroom(limit: int = 4) -> List[Dict]:
       date_text = ""
 
       if container:
+        # Date: <time> text, datetime attribute, or date-like class/text.
+        time_el = container.find("time")
+        if time_el:
+          date_text = time_el.get_text(strip=True) or ""
+          if not date_text and time_el.get("datetime"):
+            try:
+              from datetime import datetime
+              dt = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00")[:10])
+              date_text = dt.strftime("%b %d, %Y")
+            except Exception:
+              date_text = time_el["datetime"][:10]
+        if not date_text:
+          for el in container.find_all(class_=re.compile(r"date|time|meta", re.I)):
+            t = (el.get_text(strip=True) or "").strip()
+            if t and re.search(r"\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}|\d{4}[\s/\-]\d{1,2}[\s/\-]\d{1,2}|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}", t):
+              date_text = t
+              break
+        if not date_text:
+          full_text = container.get_text(separator=" ", strip=True) or ""
+          m = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}", full_text)
+          if m:
+            date_text = m.group(0).strip()
+        if not date_text:
+          sibling = h2.find_next_sibling()
+          next_h2 = h2.find_next("h2")
+          while sibling and sibling != next_h2:
+            time_el = sibling.find("time") if hasattr(sibling, "find") else None
+            if time_el:
+              date_text = time_el.get_text(strip=True) or ""
+              if not date_text and time_el.get("datetime"):
+                try:
+                  from datetime import datetime
+                  dt = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00")[:10])
+                  date_text = dt.strftime("%b %d, %Y")
+                except Exception:
+                  date_text = time_el["datetime"][:10]
+              if date_text:
+                break
+            if hasattr(sibling, "get_text"):
+              t = sibling.get_text(separator=" ", strip=True) or ""
+              m = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\d{1,2}[\s/\-]\d{1,2}[\s/\-]\d{2,4}", t)
+              if m:
+                date_text = m.group(0).strip()
+                break
+            sibling = sibling.find_next_sibling() if hasattr(sibling, "find_next_sibling") else None
+
         # Category text like "Payments Automation" is often in a nearby element.
         cat_el = container.find(
           ["span", "a"],
@@ -184,11 +276,6 @@ async def fetch_corpay_resources_newsroom(limit: int = 4) -> List[Dict]:
         para = container.find("p")
         if para:
           excerpt = para.get_text(strip=True)
-
-        # Date may be in a <time> element or small text.
-        time_el = container.find("time")
-        if time_el:
-          date_text = time_el.get_text(strip=True)
 
       items.append(
         {

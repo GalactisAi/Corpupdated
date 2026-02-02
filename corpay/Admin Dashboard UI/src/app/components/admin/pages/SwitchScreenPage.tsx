@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
+import { Input } from '../../ui/input';
+import { Label } from '../../ui/label';
 import { FileUpload } from '../FileUpload';
 import { toast } from 'sonner';
 import { Presentation } from 'lucide-react';
@@ -11,6 +13,7 @@ export function SwitchScreenPage() {
   const [uploadedPptUrl, setUploadedPptUrl] = useState<string | null>(null);
   const [isUploadingPpt, setIsUploadingPpt] = useState(false);
   const [isSlideshowActive, setIsSlideshowActive] = useState(false);
+  const [slideIntervalSeconds, setSlideIntervalSeconds] = useState<number>(5);
 
   const uploadPptFile = async (file: File): Promise<string | null> => {
     setIsUploadingPpt(true);
@@ -61,11 +64,11 @@ export function SwitchScreenPage() {
 
       const fileUrl = response.data.file_url;
       setUploadedPptUrl(fileUrl);
-      toast.success('PPT file uploaded successfully');
+      toast.success('File uploaded successfully');
       return fileUrl;
     } catch (error: any) {
-      console.error('Error uploading PPT file:', error);
-      toast.error(`Failed to upload PPT file: ${error.message || 'Unknown error'}`);
+      console.error('Error uploading file:', error);
+      toast.error(`Failed to upload file: ${error.message || 'Unknown error'}`);
       return null;
     } finally {
       setIsUploadingPpt(false);
@@ -83,7 +86,7 @@ export function SwitchScreenPage() {
 
   const handleStartSlideshow = async () => {
     if (!pptFile && !uploadedPptUrl) {
-      toast.error('Please select a PPT file first');
+      toast.error('Please select a presentation file first');
       return;
     }
 
@@ -91,14 +94,14 @@ export function SwitchScreenPage() {
     if (pptFile && !uploadedPptUrl) {
       const uploadedUrl = await uploadPptFile(pptFile);
       if (!uploadedUrl) {
-        toast.error('Failed to upload PPT file. Please try again.');
+        toast.error('Failed to upload file. Please try again.');
         return;
       }
       fileUrlToUse = uploadedUrl;
     }
 
     if (!fileUrlToUse) {
-      toast.error('No PPT file available. Please upload a file first.');
+      toast.error('No file available. Please upload a presentation first.');
       return;
     }
 
@@ -113,12 +116,14 @@ export function SwitchScreenPage() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      const intervalSeconds = Math.max(1, Math.min(300, slideIntervalSeconds)) || 5;
+
       // Try dev endpoint first (no auth)
       let response;
       try {
         response = await axios.post(
           `${API_BASE_URL}/api/admin/slideshow/start-dev`,
-          {},
+          { interval_seconds: intervalSeconds },
           { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
         );
       } catch (devError: any) {
@@ -126,7 +131,7 @@ export function SwitchScreenPage() {
           try {
             response = await axios.post(
               `${API_BASE_URL}/api/admin/slideshow/start`,
-              {},
+              { interval_seconds: intervalSeconds },
               { headers, timeout: 10000 }
             );
           } catch (authError: any) {
@@ -196,7 +201,7 @@ export function SwitchScreenPage() {
         <div>
           <h1 className="text-3xl text-white mb-2">Switch Screen</h1>
           <p className="text-gray-400">
-            Upload a PowerPoint and switch the main dashboard screen to a full-screen slideshow.
+            Upload a PDF and switch the main dashboard screen to a full-screen slideshow.
           </p>
         </div>
       </div>
@@ -205,10 +210,10 @@ export function SwitchScreenPage() {
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <Presentation className="w-4 h-4" />
-            Upload PowerPoint Presentation
+            Upload Presentation
           </CardTitle>
           <CardDescription className="text-gray-400">
-            Upload a PowerPoint file (PPTX) to display as a full-screen slideshow on the Frontend Dashboard.
+            Upload a PDF file to display as a full-screen slideshow on the Frontend Dashboard.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -219,24 +224,38 @@ export function SwitchScreenPage() {
               setPptFile(null);
               setUploadedPptUrl(null);
             }}
-            label="Select PowerPoint File"
+            label="Select PDF File"
             accept={{
-              'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-              'application/vnd.ms-powerpoint': ['.ppt'],
+              'application/pdf': ['.pdf'],
             }}
           />
           {isUploadingPpt && (
-            <p className="text-sm text-gray-400">Uploading PPT file...</p>
+            <p className="text-sm text-gray-400">Uploading file...</p>
           )}
           {uploadedPptUrl && (
-            <p className="text-sm text-green-400">✓ PPT file uploaded successfully</p>
+            <p className="text-sm text-green-400">✓ File uploaded successfully</p>
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="slideInterval" className="text-white">
+              Slide interval (seconds)
+            </Label>
+            <Input
+              id="slideInterval"
+              type="number"
+              min={1}
+              max={300}
+              value={slideIntervalSeconds}
+              onChange={(e) => setSlideIntervalSeconds(Math.max(1, Math.min(300, Number(e.target.value) || 5)))}
+              className="bg-white/10 border-white/20 text-white max-w-[120px]"
+            />
+            <p className="text-xs text-gray-400">How many seconds each slide is shown before moving to the next (1–300).</p>
+          </div>
 
           <div className="bg-white/5 border border-white/10 rounded-lg p-4">
             <h4 className="text-white mb-2">Supported Formats:</h4>
             <ul className="text-sm text-gray-400 space-y-1">
-              <li>• PowerPoint (.pptx) - Recommended</li>
-              <li>• PowerPoint 97-2003 (.ppt) - Limited support</li>
+              <li>• PDF (.pdf) - No extra software needed</li>
             </ul>
             <p className="text-sm text-gray-400 mt-2">
               Click "Switch to Slideshow" to replace the main dashboard with the presentation, and "Switch back to Dashboard"

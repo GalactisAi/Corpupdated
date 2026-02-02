@@ -11,13 +11,15 @@ export function ResourceCard({ title, description, type }: ResourceCardProps) {
   const bgColor = type === 'case-study' ? '#3D1628' : '#981239';
   
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer hover:scale-105 transition-transform duration-200">
-      <div className="p-2 rounded" style={{ backgroundColor: bgColor + '20' }}>
+    <div className="flex items-start gap-3 p-3 bg-gray-50/60 rounded-lg cursor-pointer hover:bg-gray-100/80 transition-colors duration-150">
+      <div className="p-2 rounded shrink-0" style={{ backgroundColor: bgColor + '20' }}>
         <Icon className="w-4 h-4" style={{ color: bgColor }} />
       </div>
-      <div>
-        <p className="text-sm mb-1" style={{ color: '#3D1628' }}>{title}</p>
-        <p className="text-xs" style={{ color: '#E6E8E7' }}>{description}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium mb-1 line-clamp-2 leading-snug" style={{ color: '#3D1628' }}>{title}</p>
+        {description ? (
+          <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: '#6b7280' }}>{description}</p>
+        ) : null}
       </div>
     </div>
   );

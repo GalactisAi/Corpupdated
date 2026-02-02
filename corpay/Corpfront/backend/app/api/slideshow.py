@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -15,6 +15,9 @@ from pathlib import Path
 from app.config import settings
 import subprocess
 import shutil
+import sys
+import re
+import tempfile
 from pptx import Presentation
 from io import BytesIO
 from PIL import Image
@@ -23,11 +26,63 @@ import io
 router = APIRouter(prefix="/api", tags=["slideshow"])
 
 
+def _find_libreoffice() -> str:
+    """Find LibreOffice (soffice) executable on Windows, macOS, or Linux."""
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            "soffice",
+            "libreoffice",
+        ]
+    elif sys.platform == "darwin":
+        candidates = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            "soffice",
+            "libreoffice",
+        ]
+    else:
+        candidates = [
+            "/usr/bin/soffice",
+            "/usr/bin/libreoffice",
+            "soffice",
+            "libreoffice",
+        ]
+
+    for path in candidates:
+        try:
+            if os.sep in path and not os.path.exists(path):
+                continue
+            result = subprocess.run(
+                [path, "--version"],
+                capture_output=True,
+                timeout=10,
+                text=True,
+                cwd=os.path.expanduser("~"),
+            )
+            out = (result.stdout or "") + (result.stderr or "")
+            if result.returncode == 0 or "LibreOffice" in out:
+                return path
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            continue
+    raise FileNotFoundError(
+        "LibreOffice not found. Install it: "
+        "Windows: https://www.libreoffice.org/download/download/ | "
+        "macOS: brew install --cask libreoffice | "
+        "Linux: sudo apt install libreoffice (or equivalent)."
+    )
+
+
 class SlideshowState(BaseModel):
     is_active: bool
     file_url: Optional[str] = None
     file_name: Optional[str] = None
     started_at: Optional[datetime] = None
+    interval_seconds: Optional[int] = 5
+
+
+class SlideshowStartBody(BaseModel):
+    interval_seconds: Optional[int] = 5
 
 
 # In-memory storage for slideshow state (can be moved to database later)
@@ -35,7 +90,8 @@ _slideshow_state = {
     "is_active": False,
     "file_url": None,
     "file_name": None,
-    "started_at": None
+    "started_at": None,
+    "interval_seconds": 5
 }
 
 
@@ -44,9 +100,9 @@ async def upload_ppt_file_dev(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Upload PowerPoint file for slideshow (development mode - no auth required)"""
-    if not file.filename.endswith(('.pptx', '.ppt')):
-        raise HTTPException(status_code=400, detail="File must be PowerPoint format (.pptx or .ppt)")
+    """Upload PowerPoint or PDF file for slideshow (development mode - no auth required)"""
+    if not file.filename or not file.filename.lower().endswith(('.pptx', '.ppt', '.pdf')):
+        raise HTTPException(status_code=400, detail="File must be PowerPoint (.pptx, .ppt) or PDF (.pdf)")
     
     # Save file
     file_path = save_uploaded_file(file, "slideshow")
@@ -90,9 +146,9 @@ async def upload_ppt_file(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Upload PowerPoint file for slideshow"""
-    if not file.filename.endswith(('.pptx', '.ppt')):
-        raise HTTPException(status_code=400, detail="File must be PowerPoint format (.pptx or .ppt)")
+    """Upload PowerPoint or PDF file for slideshow"""
+    if not file.filename or not file.filename.lower().endswith(('.pptx', '.ppt', '.pdf')):
+        raise HTTPException(status_code=400, detail="File must be PowerPoint (.pptx, .ppt) or PDF (.pdf)")
     
     # Save file
     file_path = save_uploaded_file(file, "slideshow")
@@ -132,12 +188,15 @@ async def upload_ppt_file(
 
 @router.post("/admin/slideshow/start-dev")
 async def start_slideshow_dev(
+    body: Optional[SlideshowStartBody] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     """Start the slideshow on frontend dashboard (development mode - no auth required)"""
     if not _slideshow_state["file_url"]:
-        raise HTTPException(status_code=400, detail="No PPT file uploaded. Please upload a file first.")
+        raise HTTPException(status_code=400, detail="No presentation file uploaded. Please upload a file first.")
     
+    if body and body.interval_seconds is not None:
+        _slideshow_state["interval_seconds"] = max(1, min(300, body.interval_seconds))  # clamp 1–300
     _slideshow_state["is_active"] = True
     _slideshow_state["started_at"] = datetime.now()
     
@@ -145,19 +204,23 @@ async def start_slideshow_dev(
         "message": "Slideshow started",
         "is_active": True,
         "file_url": _slideshow_state["file_url"],
-        "file_name": _slideshow_state["file_name"]
+        "file_name": _slideshow_state["file_name"],
+        "interval_seconds": _slideshow_state["interval_seconds"]
     }
 
 
 @router.post("/admin/slideshow/start")
 async def start_slideshow(
+    body: Optional[SlideshowStartBody] = Body(default=None),
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """Start the slideshow on frontend dashboard"""
     if not _slideshow_state["file_url"]:
-        raise HTTPException(status_code=400, detail="No PPT file uploaded. Please upload a file first.")
+        raise HTTPException(status_code=400, detail="No presentation file uploaded. Please upload a file first.")
     
+    if body and body.interval_seconds is not None:
+        _slideshow_state["interval_seconds"] = max(1, min(300, body.interval_seconds))
     _slideshow_state["is_active"] = True
     _slideshow_state["started_at"] = datetime.now()
     
@@ -165,7 +228,8 @@ async def start_slideshow(
         "message": "Slideshow started",
         "is_active": True,
         "file_url": _slideshow_state["file_url"],
-        "file_name": _slideshow_state["file_name"]
+        "file_name": _slideshow_state["file_name"],
+        "interval_seconds": _slideshow_state["interval_seconds"]
     }
 
 
@@ -205,118 +269,174 @@ async def get_slideshow_state(db: Session = Depends(get_db)):
         is_active=_slideshow_state["is_active"],
         file_url=_slideshow_state["file_url"],
         file_name=_slideshow_state["file_name"],
-        started_at=_slideshow_state["started_at"]
+        started_at=_slideshow_state["started_at"],
+        interval_seconds=_slideshow_state.get("interval_seconds", 5)
     )
 
 
 @router.get("/dashboard/slideshow/slides")
 async def get_slide_images(db: Session = Depends(get_db)):
-    """Convert PPTX slides to images - exact page-by-page display without extraction"""
+    """Convert PPT/PPTX or PDF to slide images for display."""
     if not _slideshow_state["file_url"]:
-        raise HTTPException(status_code=404, detail="No PPT file uploaded")
+        raise HTTPException(status_code=404, detail="No presentation file uploaded")
     
     file_path = _slideshow_state["file_url"].replace(f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/uploads/", "")
     upload_dir = Path(settings.upload_dir)
     full_file_path = upload_dir / file_path
     
     if not full_file_path.exists():
-        raise HTTPException(status_code=404, detail="PPT file not found")
+        raise HTTPException(status_code=404, detail="Presentation file not found")
     
     slides_dir = upload_dir / "slideshow" / "slides"
     slides_dir.mkdir(parents=True, exist_ok=True)
     
     base_name = full_file_path.stem
     API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
-    
-    # Use LibreOffice to convert each slide to an image (exact rendering)
-    # This preserves the exact layout, fonts, colors, images - everything
+    suffix = full_file_path.suffix.lower()
+
+    # PDF: convert each page to PNG with PyMuPDF (no LibreOffice needed)
+    if suffix == ".pdf":
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="PDF support requires the pymupdf package. Install with: pip install pymupdf",
+            )
+        try:
+            # Cache: return existing slides if same file (path + mtime) was already converted
+            meta_path = slides_dir / f"{base_name}.pdf.meta"
+            file_mtime = str(full_file_path.stat().st_mtime)
+            file_key = f"{full_file_path.resolve()}\n{file_mtime}"
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r") as f:
+                        if f.read().strip() == file_key:
+                            cached = sorted(slides_dir.glob(f"{base_name}_*.png"), key=lambda p: int(p.stem.rsplit("_", 1)[-1]))
+                            if cached:
+                                slide_images = [f"{API_BASE_URL}/uploads/slideshow/slides/{p.name}" for p in cached]
+                                print(f"[Slideshow] PDF serving {len(slide_images)} cached slides")
+                                return {"slides": slide_images, "use_viewer": False}
+                except (ValueError, OSError):
+                    pass
+            for old in slides_dir.glob(f"{base_name}*.png"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+            for old in slides_dir.glob(f"{base_name}.pdf.meta"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+            # 1.5x scale for faster conversion (was 2.0)
+            PDF_SCALE = 1.5
+            doc = fitz.open(str(full_file_path))
+            slide_images = []
+            for i in range(len(doc)):
+                page = doc[i]
+                mat = fitz.Matrix(PDF_SCALE, PDF_SCALE)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                out_path = slides_dir / f"{base_name}_{i + 1}.png"
+                pix.save(str(out_path))
+                slide_images.append(f"{API_BASE_URL}/uploads/slideshow/slides/{out_path.name}")
+            doc.close()
+            if slide_images:
+                with open(meta_path, "w") as f:
+                    f.write(file_key)
+                print(f"[Slideshow] PDF converted to {len(slide_images)} slides")
+                return {"slides": slide_images, "use_viewer": False}
+            raise HTTPException(status_code=500, detail="PDF has no pages")
+        except fitz.FileDataError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid or corrupted PDF: {e}")
+        except Exception as e:
+            print(f"[Slideshow] PDF conversion error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to convert PDF to images: {e}")
+
+    # PPT/PPTX: use LibreOffice to convert each slide to an image
     try:
-        # Find LibreOffice executable (Windows paths)
-        libreoffice_paths = [
-            r"C:\Program Files\LibreOffice\program\soffice.exe",  # Most common Windows path
-            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-            "libreoffice",  # Try PATH
-            "soffice",  # Alternative command
-        ]
-        
-        libreoffice_cmd = None
-        for path in libreoffice_paths:
+        libreoffice_cmd = _find_libreoffice()
+        print(f"[Slideshow] Using LibreOffice at: {libreoffice_cmd}")
+
+        # Clear previous conversion outputs for this file so we don't return stale slides
+        for old in slides_dir.glob(f"{base_name}*.png"):
             try:
-                # Test if file exists (for Windows paths) or command works
-                if os.path.exists(path) if os.sep in path else True:
-                    test_result = subprocess.run(
-                        [path, "--version"],
-                        capture_output=True,
-                        timeout=5,
-                        text=True
-                    )
-                    if test_result.returncode == 0 or "LibreOffice" in (test_result.stdout or "") or "LibreOffice" in (test_result.stderr or ""):
-                        libreoffice_cmd = path
-                        print(f"[Slideshow] Found LibreOffice at: {path}")
-                        break
-            except Exception as e:
-                print(f"[Slideshow] Testing {path} failed: {e}")
-                continue
-        
-        if not libreoffice_cmd:
-            raise FileNotFoundError("LibreOffice not found. Please ensure it's installed at C:\\Program Files\\LibreOffice\\program\\soffice.exe")
-        
+                old.unlink()
+            except OSError:
+                pass
+
         print(f"[Slideshow] Converting {full_file_path} to images using LibreOffice...")
-        result = subprocess.run(
-            [
-                libreoffice_cmd,
-                "--headless",
-                "--convert-to", "png",
-                "--outdir", str(slides_dir),
-                str(full_file_path)
-            ],
-            capture_output=True,
-            timeout=120,
-            text=True
-        )
-        
+        # Use a temp dir as "user profile" to avoid lock/profile issues when multiple conversions run
+        with tempfile.TemporaryDirectory(prefix="libreoffice_") as tmpdir:
+            user_install = Path(tmpdir).as_uri()
+            result = subprocess.run(
+                [
+                    libreoffice_cmd,
+                    "--headless",
+                    "--invisible",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    f"-env:UserInstallation={user_install}",
+                    "--convert-to", "png",
+                    "--outdir", str(slides_dir.resolve()),
+                    str(full_file_path.resolve()),
+                ],
+                capture_output=True,
+                timeout=180,
+                text=True,
+            )
+
         print(f"[Slideshow] LibreOffice exit code: {result.returncode}")
         if result.stdout:
             print(f"[Slideshow] LibreOffice stdout: {result.stdout}")
         if result.stderr:
             print(f"[Slideshow] LibreOffice stderr: {result.stderr}")
-        
+
         if result.returncode == 0:
-            slide_images = []
-            # LibreOffice creates files like: filename_1.png, filename_2.png, etc.
-            # Or sometimes: filename.png (single slide)
-            
-            # Check for numbered slides first
-            for i in range(1, 100):  # Max 100 slides
-                slide_file = slides_dir / f"{base_name}_{i}.png"
-                if slide_file.exists():
-                    slide_images.append(f"{API_BASE_URL}/uploads/slideshow/slides/{slide_file.name}")
-                    print(f"[Slideshow] Found slide {i}: {slide_file.name}")
-                else:
-                    # Check for single slide file (if only 1 slide)
-                    if i == 1:
-                        single_file = slides_dir / f"{base_name}.png"
-                        if single_file.exists():
-                            slide_images.append(f"{API_BASE_URL}/uploads/slideshow/slides/{single_file.name}")
-                            print(f"[Slideshow] Found single slide: {single_file.name}")
-                    break
-            
-            if slide_images:
+            # LibreOffice outputs: base_name_1.png, base_name_2.png, ... or base_name.png for single slide
+            slide_files = list(slides_dir.glob(f"{base_name}*.png"))
+            if not slide_files:
+                print("[Slideshow] No slide images found after conversion")
+            else:
+                def _slide_order(p: Path) -> tuple:
+                    name = p.stem
+                    if name == base_name:
+                        return (0,)  # base_name.png = single slide, first
+                    m = re.search(r"_(\d+)$", name)
+                    return (1, int(m.group(1))) if m else (2, name)
+
+                slide_files.sort(key=_slide_order)
+                slide_images = [
+                    f"{API_BASE_URL}/uploads/slideshow/slides/{p.name}"
+                    for p in slide_files
+                ]
                 print(f"[Slideshow] Successfully converted {len(slide_images)} slides")
                 return {"slides": slide_images, "use_viewer": False}
-            else:
-                print(f"[Slideshow] No slide images found after conversion")
         else:
             print(f"[Slideshow] LibreOffice conversion failed with code {result.returncode}")
-    except FileNotFoundError:
-        print("[Slideshow] LibreOffice not found - please install LibreOffice for slide conversion")
+    except FileNotFoundError as e:
+        print(f"[Slideshow] LibreOffice not found: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
     except subprocess.TimeoutExpired:
         print("[Slideshow] LibreOffice conversion timed out")
+        raise HTTPException(
+            status_code=504,
+            detail="Slide conversion timed out. Try a smaller presentation or install LibreOffice locally.",
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[Slideshow] LibreOffice conversion error: {e}")
+        import traceback
+        traceback.print_exc()
     
     # If LibreOffice fails, return error
     raise HTTPException(
-        status_code=500, 
-        detail="Failed to convert slides to images. Please install LibreOffice or ensure the PPTX file is valid."
+        status_code=500,
+        detail="Failed to convert PPT to images. Install LibreOffice or use a PDF file for best compatibility.",
     )

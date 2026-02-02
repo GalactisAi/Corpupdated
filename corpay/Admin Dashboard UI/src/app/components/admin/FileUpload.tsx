@@ -36,9 +36,11 @@ export function FileUpload({
   // Determine file type description based on accept prop
   const getFileTypeDescription = () => {
     const acceptKeys = Object.keys(accept);
-    if (acceptKeys.some(key => key.includes('presentation'))) {
-      return 'PowerPoint (.pptx, .ppt)';
-    }
+    const hasPpt = acceptKeys.some(key => key.includes('presentation') || key.includes('powerpoint'));
+    const hasPdf = acceptKeys.some(key => key.includes('pdf'));
+    if (hasPpt && hasPdf) return 'PowerPoint (.pptx, .ppt) or PDF (.pdf)';
+    if (hasPpt) return 'PowerPoint (.pptx, .ppt)';
+    if (hasPdf) return 'PDF (.pdf)';
     return 'Excel (.xlsx, .xls)';
   };
 

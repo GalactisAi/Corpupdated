@@ -1,40 +1,65 @@
+import React from 'react';
+import { ChevronRight } from 'lucide-react';
+
 interface CompanyAnnouncementProps {
   title: string;
   description: string;
   date: string;
-  badge?: {
-    text: string;
-    type: 'upcoming' | 'new';
-  };
   backgroundColor: string;
+  /** When provided, the whole card is clickable and opens this URL in a new tab. */
+  link?: string;
+  /** Optional Corpay accent: left border */
+  accentBorder?: boolean;
+  /** Left border color when accentBorder (default #981239) */
+  accentColor?: string;
 }
 
-export function CompanyAnnouncement({ title, description, date, badge, backgroundColor }: CompanyAnnouncementProps) {
-  const badgeStyles = badge ? {
-    backgroundColor: badge.type === 'upcoming' ? '#0085C2' : '#BE1549',
-    color: 'white',
-    fontSize: '12px',
-    padding: '4px 8px',
-    borderRadius: '12px',
-    fontWeight: 600
-  } : undefined;
+export function CompanyAnnouncement({ title, description, date, backgroundColor, link, accentBorder, accentColor = '#981239' }: CompanyAnnouncementProps) {
+  const displayDate = (date || '').trim();
+  const content = (
+    <>
+      <p style={{ fontWeight: 500, color: '#981239', fontSize: '12px', marginBottom: '6px', opacity: 0.95 }}>
+        {displayDate || '—'}
+      </p>
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <p style={{ fontWeight: 600, color: '#3D1628', fontSize: '14px' }} className="flex-1 min-w-0">{title}</p>
+        <ChevronRight
+          className="w-5 h-5 shrink-0 mt-0.5 opacity-80"
+          style={{ color: '#981239' }}
+          aria-hidden
+        />
+      </div>
+      {description ? (
+        <p style={{ fontWeight: 400, color: '#3D1628', fontSize: '13px', lineHeight: 1.4 }} className="line-clamp-2">{description}</p>
+      ) : null}
+    </>
+  );
+
+  const cardStyle: React.CSSProperties = {
+    backgroundColor,
+    boxShadow: '0 2px 8px rgba(152, 18, 57, 0.06)',
+    ...(accentBorder ? { borderLeft: `3px solid ${accentColor}` } : {}),
+  };
+
+  const cardClassName = 'p-4 rounded-lg cursor-pointer transition-all duration-200 flex flex-col hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#981239]';
+
+  if (link) {
+    return (
+      <a
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cardClassName}
+        style={cardStyle}
+      >
+        {content}
+      </a>
+    );
+  }
 
   return (
-    <div 
-      className="p-4 rounded-lg cursor-pointer hover:scale-105 transition-transform duration-200"
-      style={{ 
-        backgroundColor: backgroundColor,
-        boxShadow: '0px 2px 8px rgba(0,0,0,0.08)'
-      }}
-    >
-      <div className="flex items-start justify-between mb-2">
-        <p style={{ fontWeight: 600, color: '#3D1628', fontSize: '14px' }}>{title}</p>
-        {badge && (
-          <span style={badgeStyles}>{badge.text}</span>
-        )}
-      </div>
-      <p style={{ fontWeight: 400, color: '#E6E8E7', fontSize: '14px', marginBottom: '4px' }}>{date}</p>
-      <p style={{ fontWeight: 400, color: '#3D1628', fontSize: '14px' }}>{description}</p>
+    <div className={cardClassName} style={cardStyle}>
+      {content}
     </div>
   );
 }

@@ -6,7 +6,6 @@ import {
   FileText, 
   Users, 
   CreditCard, 
-  Activity, 
   Settings, 
   PieChart,
   MonitorPlay,
@@ -24,7 +23,6 @@ const navItems = [
   { path: '/admin/posts', label: 'Posts', icon: FileText },
   { path: '/admin/employees', label: 'Employees', icon: Users },
   { path: '/admin/payments', label: 'Payments', icon: CreditCard },
-  { path: '/admin/system', label: 'System Performance', icon: Activity },
   { path: '/admin/config', label: 'API Config', icon: Settings },
   { path: '/admin/switch-screen', label: 'Switch Screen', icon: MonitorPlay },
 ];

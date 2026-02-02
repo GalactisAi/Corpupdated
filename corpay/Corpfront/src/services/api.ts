@@ -1,12 +1,15 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Use proxy (/api) in dev when VITE_API_URL not set; full URL in production
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+const baseURL = API_BASE_URL ? `${API_BASE_URL}/api` : '/api'
 
 export const api = axios.create({
-  baseURL: `${API_BASE_URL}/api`,
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 20000, // 20s - newsroom/resources scrape corpay.com and can be slow on first load
 })
 
 // Dashboard API functions

@@ -4,76 +4,100 @@ import axios from 'axios';
 
 interface FullScreenSlideshowProps {
   fileUrl: string;
+  intervalSeconds?: number;
   onClose?: () => void;
 }
 
-export function FullScreenSlideshow({ fileUrl, onClose }: FullScreenSlideshowProps) {
+const loadingScreenStyle: React.CSSProperties = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  margin: 0,
+  padding: 0,
+  backgroundColor: '#000',
+  zIndex: 99999,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: '#fff',
+  fontSize: '24px',
+};
+
+export function FullScreenSlideshow({ fileUrl, intervalSeconds = 5, onClose }: FullScreenSlideshowProps) {
   const [slides, setSlides] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingSlow, setLoadingSlow] = useState(false);
+
+  const intervalSec = Math.max(1, Math.min(300, Number(intervalSeconds) || 5));
 
   useEffect(() => {
     loadSlides();
-    
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' && currentIndex < slides.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
-        setCurrentIndex(currentIndex - 1);
-      } else if (e.key === 'Escape' && onClose) {
-        onClose();
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [fileUrl, currentIndex, slides.length, onClose]);
+  }, [fileUrl]);
+
+  // Show "taking longer" hint after 12 seconds
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => setLoadingSlow(true), 12000);
+    return () => clearTimeout(t);
+  }, [loading]);
+
+  // Auto-advance slides every intervalSeconds (must be before any early returns - Rules of Hooks)
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const ms = Math.max(1000, intervalSec * 1000);
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % slides.length);
+    }, ms);
+    return () => clearInterval(timer);
+  }, [slides.length, intervalSec]);
 
   const loadSlides = async () => {
     try {
       setLoading(true);
       setError(null);
+      setLoadingSlow(false);
       console.log('[Slideshow] Loading slides from backend...');
-      
-      // Get converted slide images from backend (no extraction, just display)
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await axios.get(`${API_BASE_URL}/api/dashboard/slideshow/slides`, { timeout: 60000 });
+
+      // Use empty string so /api goes through Vite proxy to backend (avoids CORS)
+      const API_BASE = import.meta.env.VITE_API_URL || '';
+      const slidesUrl = API_BASE ? `${API_BASE}/api/dashboard/slideshow/slides` : '/api/dashboard/slideshow/slides';
+      const response = await axios.get(slidesUrl, { timeout: 120000 });
       console.log('[Slideshow] Backend response:', response.data);
-      
-      if (response.data.slides && response.data.slides.length > 0) {
-        // Backend converted slides to images - just display them page by page
+
+      if (response.data.slides && Array.isArray(response.data.slides) && response.data.slides.length > 0) {
         console.log('[Slideshow] ✅ Loaded', response.data.slides.length, 'slides from backend');
         setSlides(response.data.slides);
+        setCurrentIndex(0);
         setLoading(false);
       } else {
-        setError('No slides found. Please ensure LibreOffice is installed for slide conversion.');
+        setError('No slides found. Backend may need LibreOffice (PPT) or pymupdf (PDF). Check server logs.');
         setLoading(false);
       }
     } catch (err: any) {
       console.error('[Slideshow] ❌ Error loading slides:', err);
-      setError(err.response?.data?.detail || err.message || 'Failed to load presentation. Please ensure LibreOffice is installed.');
+      const msg = err.response?.data?.detail ?? err.message ?? 'Request failed. Is the backend running? (Check terminal and try http://localhost:8000)';
+      setError(String(msg));
       setLoading(false);
     }
   };
 
   if (loading) {
     return (
-      <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        width: '100vw', 
-        height: '100vh', 
-        backgroundColor: '#000', 
-        zIndex: 99999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fff',
-        fontSize: '24px'
-      }}>
-        Loading presentation...
+      <div style={loadingScreenStyle}>
+        <div>Loading presentation...</div>
+        {loadingSlow && (
+          <div style={{ marginTop: 16, fontSize: 14, color: '#aaa', textAlign: 'center', maxWidth: 320 }}>
+            Taking longer than usual. The server may be converting the file.
+            <br />Check that the backend is running and check the browser console (F12) for errors.
+          </div>
+        )}
       </div>
     );
   }
@@ -97,22 +121,6 @@ export function FullScreenSlideshow({ fileUrl, onClose }: FullScreenSlideshowPro
       }}>
         <div style={{ fontSize: '24px', marginBottom: '10px' }}>Error</div>
         <div style={{ marginBottom: '20px' }}>{error}</div>
-        {onClose && (
-          <button 
-            onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#ff0000',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '16px'
-            }}
-          >
-            Close
-          </button>
-        )}
       </div>
     );
   }
@@ -149,34 +157,7 @@ export function FullScreenSlideshow({ fileUrl, onClose }: FullScreenSlideshowPro
       display: 'flex',
       flexDirection: 'column'
     }}>
-      {/* Header */}
-      <div style={{ 
-        padding: '10px 20px', 
-        backgroundColor: '#333', 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        color: '#fff'
-      }}>
-        <div>Slide {currentIndex + 1} of {slides.length}</div>
-        {onClose && (
-          <button 
-            onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#ff0000',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Close (ESC)
-          </button>
-        )}
-      </div>
-
-      {/* Slide display */}
+      {/* Slide display only - no header or navigation buttons */}
       <div style={{ 
         flex: 1, 
         display: 'flex', 
@@ -200,48 +181,6 @@ export function FullScreenSlideshow({ fileUrl, onClose }: FullScreenSlideshowPro
           }}
         />
       </div>
-
-      {/* Navigation */}
-      {slides.length > 1 && (
-        <div style={{ 
-          padding: '15px', 
-          backgroundColor: '#333', 
-          display: 'flex', 
-          justifyContent: 'center',
-          gap: '10px'
-        }}>
-          <button
-            onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
-            disabled={currentIndex === 0}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: currentIndex === 0 ? '#555' : '#007bff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '16px'
-            }}
-          >
-            ← Previous
-          </button>
-          <button
-            onClick={() => setCurrentIndex(Math.min(slides.length - 1, currentIndex + 1))}
-            disabled={currentIndex === slides.length - 1}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: currentIndex === slides.length - 1 ? '#555' : '#007bff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentIndex === slides.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: '16px'
-            }}
-          >
-            Next →
-          </button>
-        </div>
-      )}
     </div>
   );
 }
