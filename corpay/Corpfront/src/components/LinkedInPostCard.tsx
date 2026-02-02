@@ -30,8 +30,10 @@ export function LinkedInPostCard({ author, timeAgo, content, image, likes = 0, c
           </div>
         </div>
         
-        {/* Content */}
-        <p className="text-sm leading-relaxed" style={{ color: '#3D1628' }}>{content}</p>
+        {/* Content - Display first two lines */}
+        <p className="text-sm leading-relaxed whitespace-pre-line line-clamp-2" style={{ color: '#3D1628' }}>
+          {content}
+        </p>
       </div>
       
       {/* Image */}

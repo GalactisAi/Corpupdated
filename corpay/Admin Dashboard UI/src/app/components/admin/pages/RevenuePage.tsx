@@ -394,7 +394,8 @@ export function RevenuePage() {
   const loadRevenueSummary = async () => {
     setIsLoadingRevenue(true);
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      // Use proxy in dev (empty string) or full URL in production
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
       const response = await axios.get(`${API_BASE_URL}/api/dashboard/revenue`, { timeout: 10000 });
       if (response.data) {
         setRevenueSummary({

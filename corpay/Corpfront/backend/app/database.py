@@ -1,17 +1,27 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from app.config import settings
 
-# HARD CODE DATABASE URL (temporary fix)
-DATABASE_URL = "postgresql://postgres.lrhcxoquqjqqaeqvlght:galactis%40123@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+# Use database URL from settings (defaults to SQLite for local development)
+DATABASE_URL = settings.database_url
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    echo=False
-)
+# For SQLite, use different engine settings
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        echo=False
+    )
+else:
+    # For PostgreSQL (Supabase), use connection pooling
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        echo=False
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

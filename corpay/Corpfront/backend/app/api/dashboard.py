@@ -184,35 +184,65 @@ async def get_revenue_proportions(db: Session = Depends(get_db)):
 
 @router.get("/posts", response_model=List[SocialPostResponse])
 async def get_corpay_posts(limit: int = 10, db: Session = Depends(get_db)):
-    """Get Corpay LinkedIn posts"""
-    posts = db.query(SocialPost).filter(
-        SocialPost.post_type == "corpay",
-        SocialPost.is_active == 1
-    ).order_by(SocialPost.created_at.desc()).limit(limit).all()
-    
-    # If no posts in DB, try to fetch from API
-    if not posts:
-        api_posts = await LinkedInService.get_corpay_posts(limit)
-        # Could save to DB here if needed
-        return [SocialPostResponse(**post) for post in api_posts]
-    
-    return posts
+    """Get Corpay LinkedIn posts - returns both manual and API posts"""
+    try:
+        # Get all active posts from database (both manual and API)
+        # Note: SQLAlchemy filter uses AND by default, so we need to check both conditions
+        db_posts = db.query(SocialPost).filter(
+            SocialPost.post_type == "corpay"
+        ).filter(
+            SocialPost.is_active == 1
+        ).order_by(SocialPost.created_at.desc()).limit(limit).all()
+        
+        # If we have posts in DB (manual or API), return them
+        if db_posts:
+            return db_posts
+        
+        # If no posts in DB, try to fetch from API as fallback
+        try:
+            api_posts = await LinkedInService.get_corpay_posts(limit)
+            return [SocialPostResponse(**post) for post in api_posts]
+        except Exception:
+            # Return empty list if API also fails
+            return []
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching Corpay posts: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
 
 
 @router.get("/cross-border-posts", response_model=List[SocialPostResponse])
 async def get_cross_border_posts(limit: int = 10, db: Session = Depends(get_db)):
-    """Get Cross-Border LinkedIn posts"""
-    posts = db.query(SocialPost).filter(
-        SocialPost.post_type == "cross_border",
-        SocialPost.is_active == 1
-    ).order_by(SocialPost.created_at.desc()).limit(limit).all()
-    
-    # If no posts in DB, try to fetch from API
-    if not posts:
-        api_posts = await LinkedInService.get_cross_border_posts(limit)
-        return [SocialPostResponse(**post) for post in api_posts]
-    
-    return posts
+    """Get Cross-Border LinkedIn posts - returns both manual and API posts"""
+    try:
+        # Get all active posts from database (both manual and API)
+        db_posts = db.query(SocialPost).filter(
+            SocialPost.post_type == "cross_border"
+        ).filter(
+            SocialPost.is_active == 1
+        ).order_by(SocialPost.created_at.desc()).limit(limit).all()
+        
+        # If we have posts in DB (manual or API), return them
+        if db_posts:
+            return db_posts
+        
+        # If no posts in DB, try to fetch from API as fallback
+        try:
+            api_posts = await LinkedInService.get_cross_border_posts(limit)
+            return [SocialPostResponse(**post) for post in api_posts]
+        except Exception:
+            # Return empty list if API also fails
+            return []
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching Cross-Border posts: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
 
 
 @router.get("/employees", response_model=List[EmployeeMilestoneResponse])

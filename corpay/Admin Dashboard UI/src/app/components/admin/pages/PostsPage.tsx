@@ -6,9 +6,11 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { postsService } from '@/app/services/apiService';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, ImageIcon, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, ImageIcon, RefreshCw, FileText, Globe, Linkedin } from 'lucide-react';
+import axios from 'axios';
 
 interface Post {
   id: string;
@@ -23,6 +25,9 @@ export function PostsPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [useApiPosts, setUseApiPosts] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
+  const [linkedInPostUrl, setLinkedInPostUrl] = useState('');
+  const [crossBorderPostUrl, setCrossBorderPostUrl] = useState('');
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
@@ -43,15 +48,74 @@ export function PostsPage() {
   const loadPostsFromAPI = async () => {
     setIsLoadingPosts(true);
     try {
-      const apiPosts = await postsService.getPosts();
-      if (apiPosts.length > 0) {
-        setPosts(apiPosts);
-        toast.success(`Loaded ${apiPosts.length} post(s) from API`);
+      // Fetch posts from backend database (includes both manual and API posts)
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+      
+      // Fetch both Corpay and Cross-Border posts
+      const [corpayRes, crossBorderRes] = await Promise.allSettled([
+        axios.get(`${API_BASE_URL}/api/dashboard/posts`, { params: { limit: 50 } }),
+        axios.get(`${API_BASE_URL}/api/dashboard/cross-border-posts`, { params: { limit: 50 } })
+      ]);
+
+      const allPosts: Post[] = [];
+
+      // Process Corpay posts
+      if (corpayRes.status === 'fulfilled' && corpayRes.value.data) {
+        const corpayPosts = Array.isArray(corpayRes.value.data) ? corpayRes.value.data : [];
+        corpayPosts.forEach((post: any) => {
+          allPosts.push({
+            id: post.id?.toString() || Date.now().toString(),
+            title: post.content?.substring(0, 50) || 'Corpay Post',
+            content: post.content || post.post_url || '',
+            image: post.image_url,
+            type: 'linkedin',
+            createdAt: post.created_at || post.createdAt || new Date().toISOString()
+          });
+        });
+      }
+
+      // Process Cross-Border posts
+      if (crossBorderRes.status === 'fulfilled' && crossBorderRes.value.data) {
+        const crossBorderPosts = Array.isArray(crossBorderRes.value.data) ? crossBorderRes.value.data : [];
+        crossBorderPosts.forEach((post: any) => {
+          allPosts.push({
+            id: post.id?.toString() || Date.now().toString(),
+            title: post.content?.substring(0, 50) || 'Cross-Border Post',
+            content: post.content || post.post_url || '',
+            image: post.image_url,
+            type: 'crossBorder',
+            createdAt: post.created_at || post.createdAt || new Date().toISOString()
+          });
+        });
+      }
+
+      if (allPosts.length > 0) {
+        setPosts(allPosts);
+        toast.success(`Loaded ${allPosts.length} post(s) from database`);
       } else {
-        toast.info('No posts found from API. You can create posts manually.');
+        // Fallback to mock API if no database posts
+        const apiPosts = await postsService.getPosts();
+        if (apiPosts.length > 0) {
+          setPosts(apiPosts);
+          toast.success(`Loaded ${apiPosts.length} post(s) from API`);
+        } else {
+          toast.info('No posts found. You can create posts manually.');
+        }
       }
     } catch (error) {
-      toast.error('Failed to load posts from API');
+      console.error('Error loading posts:', error);
+      // Fallback to mock API on error
+      try {
+        const apiPosts = await postsService.getPosts();
+        if (apiPosts.length > 0) {
+          setPosts(apiPosts);
+          toast.success(`Loaded ${apiPosts.length} post(s) from API`);
+        } else {
+          toast.error('Failed to load posts');
+        }
+      } catch (fallbackError) {
+        toast.error('Failed to load posts');
+      }
     } finally {
       setIsLoadingPosts(false);
     }
@@ -115,6 +179,21 @@ export function PostsPage() {
     setEditingPost(null);
     setFormData({ title: '', content: '', type: 'linkedin', image: '' });
   };
+
+  // Filter posts based on active tab
+  const getFilteredPosts = () => {
+    switch (activeTab) {
+      case 'crossborder':
+        return posts.filter(post => post.type === 'crossBorder');
+      case 'corpay':
+        return posts.filter(post => post.type === 'linkedin');
+      case 'all':
+      default:
+        return posts;
+    }
+  };
+
+  const filteredPosts = getFilteredPosts();
 
   return (
     <div className="space-y-6">
@@ -209,81 +288,471 @@ export function PostsPage() {
         </div>
       </div>
 
-      <Card className="bg-white/10 border-white/20">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-white">All Posts</CardTitle>
-              <CardDescription className="text-gray-400">
-                {posts.length} total posts {useApiPosts ? '(from API)' : '(manual)'}
-              </CardDescription>
-            </div>
-            {useApiPosts && (
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-300">
-                  API Mode
-                </span>
-              </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingPosts ? (
-            <div className="flex items-center justify-center p-8">
-              <RefreshCw className="w-6 h-6 text-pink-500 animate-spin mr-2" />
-              <span className="text-white">Loading posts from API...</span>
-            </div>
-          ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/10 hover:bg-white/5">
-                <TableHead className="text-gray-300">Type</TableHead>
-                <TableHead className="text-gray-300">Title</TableHead>
-                <TableHead className="text-gray-300">Content</TableHead>
-                <TableHead className="text-gray-300">Created</TableHead>
-                <TableHead className="text-gray-300 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {posts.map((post) => (
-                <TableRow key={post.id} className="border-white/10 hover:bg-white/5">
-                  <TableCell className="text-white">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      post.type === 'linkedin' ? 'bg-blue-500/20 text-blue-300' : 'bg-green-500/20 text-green-300'
-                    }`}>
-                      {post.type === 'linkedin' ? 'LinkedIn' : 'Cross-Border'}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="bg-white/10 text-white">
+          <TabsTrigger value="all" className="text-white data-[state=active]:bg-pink-600 data-[state=active]:text-white">
+            <FileText className="w-4 h-4 mr-2" />
+            All Posts
+          </TabsTrigger>
+          <TabsTrigger value="corpay" className="text-white data-[state=active]:bg-pink-600 data-[state=active]:text-white">
+            <Linkedin className="w-4 h-4 mr-2" />
+            Corpay Posts
+          </TabsTrigger>
+          <TabsTrigger value="crossborder" className="text-white data-[state=active]:bg-pink-600 data-[state=active]:text-white">
+            <Globe className="w-4 h-4 mr-2" />
+            Cross-Border Posts
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="all" className="mt-6">
+          <Card className="bg-white/10 border-white/20">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-white">All Posts</CardTitle>
+                  <CardDescription className="text-gray-400">
+                    {filteredPosts.length} total posts {useApiPosts ? '(from API)' : '(manual)'}
+                  </CardDescription>
+                </div>
+                {useApiPosts && (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-300">
+                      API Mode
                     </span>
-                  </TableCell>
-                  <TableCell className="text-white">{post.title}</TableCell>
-                  <TableCell className="text-gray-400 max-w-md truncate">{post.content}</TableCell>
-                  <TableCell className="text-gray-400">{post.createdAt}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex gap-2 justify-end">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleEdit(post)}
-                        className="text-gray-400 hover:text-white"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleDelete(post.id)}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          )}
-        </CardContent>
-      </Card>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingPosts ? (
+                <div className="flex items-center justify-center p-8">
+                  <RefreshCw className="w-6 h-6 text-pink-500 animate-spin mr-2" />
+                  <span className="text-white">Loading posts from API...</span>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-white/10 hover:bg-white/5">
+                      <TableHead className="text-gray-300">Type</TableHead>
+                      <TableHead className="text-gray-300">Title</TableHead>
+                      <TableHead className="text-gray-300">Content</TableHead>
+                      <TableHead className="text-gray-300">Created</TableHead>
+                      <TableHead className="text-gray-300 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPosts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                          No posts found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredPosts.map((post) => (
+                        <TableRow key={post.id} className="border-white/10 hover:bg-white/5">
+                          <TableCell className="text-white">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              post.type === 'linkedin' ? 'bg-blue-500/20 text-blue-300' : 'bg-green-500/20 text-green-300'
+                            }`}>
+                              {post.type === 'linkedin' ? 'LinkedIn' : 'Cross-Border'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-white">{post.title}</TableCell>
+                          <TableCell className="text-gray-400 max-w-md truncate">{post.content}</TableCell>
+                          <TableCell className="text-gray-400">{post.createdAt}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEdit(post)}
+                                className="text-gray-400 hover:text-white"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDelete(post.id)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="corpay" className="mt-6">
+          <Card className="bg-white/10 border-white/20">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-white">Corpay Posts</CardTitle>
+                  <CardDescription className="text-gray-400">
+                    {filteredPosts.length} LinkedIn post(s) {useApiPosts ? '(from API)' : '(manual)'}
+                  </CardDescription>
+                </div>
+                {useApiPosts && (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-300">
+                      API Mode
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingPosts ? (
+                <div className="flex items-center justify-center p-8">
+                  <RefreshCw className="w-6 h-6 text-pink-500 animate-spin mr-2" />
+                  <span className="text-white">Loading posts from API...</span>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-white/10 hover:bg-white/5">
+                      <TableHead className="text-gray-300">Type</TableHead>
+                      <TableHead className="text-gray-300">Title</TableHead>
+                      <TableHead className="text-gray-300">Content</TableHead>
+                      <TableHead className="text-gray-300">Created</TableHead>
+                      <TableHead className="text-gray-300 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPosts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                          No Corpay posts found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredPosts.map((post) => (
+                        <TableRow key={post.id} className="border-white/10 hover:bg-white/5">
+                          <TableCell className="text-white">
+                            <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-300">
+                              LinkedIn
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-white">{post.title}</TableCell>
+                          <TableCell className="text-gray-400 max-w-md truncate">{post.content}</TableCell>
+                          <TableCell className="text-gray-400">{post.createdAt}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEdit(post)}
+                                className="text-gray-400 hover:text-white"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDelete(post.id)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Manual Entry Card for Corpay Posts */}
+          <Card className="bg-white/10 border-white/20 mt-6">
+            <CardHeader>
+              <CardTitle className="text-white">Manual Entry</CardTitle>
+              <CardDescription className="text-gray-400">
+                Create Corpay posts manually
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="linkedin-url" className="text-white">LinkedIn Post URL</Label>
+                <Input
+                  id="linkedin-url"
+                  type="url"
+                  value={linkedInPostUrl}
+                  onChange={(e) => setLinkedInPostUrl(e.target.value)}
+                  placeholder="https://www.linkedin.com/posts/..."
+                  className="bg-white/10 border-white/20 text-white placeholder:text-gray-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Enter the full URL of the LinkedIn post you want to add
+                </p>
+              </div>
+              <Button 
+                onClick={async () => {
+                  if (!linkedInPostUrl || !linkedInPostUrl.trim()) {
+                    toast.error('Please enter a LinkedIn post URL');
+                    return;
+                  }
+
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+                    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+                    
+                    const headers: Record<string, string> = {
+                      'Content-Type': 'application/json',
+                    };
+                    if (token) {
+                      headers['Authorization'] = `Bearer ${token}`;
+                    }
+
+                    // Try dev endpoint first (no auth), then auth endpoint
+                    let response;
+                    try {
+                      response = await axios.post(
+                        `${API_BASE_URL}/api/admin/posts/from-url-dev`,
+                        {
+                          post_url: linkedInPostUrl.trim(),
+                          post_type: 'corpay'
+                        },
+                        {
+                          headers: { 'Content-Type': 'application/json' },
+                          timeout: 10000
+                        }
+                      );
+                    } catch (devError: any) {
+                      // Try with auth
+                      response = await axios.post(
+                        `${API_BASE_URL}/api/admin/posts/from-url`,
+                        {
+                          post_url: linkedInPostUrl.trim(),
+                          post_type: 'corpay'
+                        },
+                        {
+                          headers,
+                          timeout: 10000
+                        }
+                      );
+                    }
+
+                    toast.success('Post added successfully! It will appear in the dashboard.');
+                    setLinkedInPostUrl('');
+                    
+                    // Reload posts to show the new one
+                    loadPostsFromAPI();
+                    
+                    // Note: The frontend dashboard will need to be refreshed to see the new post
+                    // The dashboard fetches posts on page load, so a manual refresh is needed
+                  } catch (error: any) {
+                    console.error('Error posting URL:', error);
+                    let errorMsg = 'Failed to add post';
+                    if (error.response?.data?.detail) {
+                      errorMsg = typeof error.response.data.detail === 'string' 
+                        ? error.response.data.detail 
+                        : JSON.stringify(error.response.data.detail);
+                    } else if (error.message) {
+                      errorMsg = typeof error.message === 'string' ? error.message : String(error.message);
+                    }
+                    toast.error(errorMsg);
+                  }
+                }}
+                className="w-full bg-pink-600 hover:bg-pink-700"
+              >
+                Post
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="crossborder" className="mt-6">
+          <Card className="bg-white/10 border-white/20">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-white">Cross-Border Posts</CardTitle>
+                  <CardDescription className="text-gray-400">
+                    {filteredPosts.length} Cross-Border post(s) {useApiPosts ? '(from API)' : '(manual)'}
+                  </CardDescription>
+                </div>
+                {useApiPosts && (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-300">
+                      API Mode
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingPosts ? (
+                <div className="flex items-center justify-center p-8">
+                  <RefreshCw className="w-6 h-6 text-pink-500 animate-spin mr-2" />
+                  <span className="text-white">Loading posts from API...</span>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-white/10 hover:bg-white/5">
+                      <TableHead className="text-gray-300">Type</TableHead>
+                      <TableHead className="text-gray-300">Title</TableHead>
+                      <TableHead className="text-gray-300">Content</TableHead>
+                      <TableHead className="text-gray-300">Created</TableHead>
+                      <TableHead className="text-gray-300 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPosts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                          No Cross-Border posts found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredPosts.map((post) => (
+                        <TableRow key={post.id} className="border-white/10 hover:bg-white/5">
+                          <TableCell className="text-white">
+                            <span className="px-2 py-1 rounded text-xs bg-green-500/20 text-green-300">
+                              Cross-Border
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-white">{post.title}</TableCell>
+                          <TableCell className="text-gray-400 max-w-md truncate">{post.content}</TableCell>
+                          <TableCell className="text-gray-400">{post.createdAt}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEdit(post)}
+                                className="text-gray-400 hover:text-white"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDelete(post.id)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Manual Entry Card for Cross-Border Posts */}
+          <Card className="bg-white/10 border-white/20 mt-6">
+            <CardHeader>
+              <CardTitle className="text-white">Manual Entry</CardTitle>
+              <CardDescription className="text-gray-400">
+                Create Cross-Border posts manually
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="crossborder-url" className="text-white">Cross-Border Post URL</Label>
+                <Input
+                  id="crossborder-url"
+                  type="url"
+                  value={crossBorderPostUrl}
+                  onChange={(e) => setCrossBorderPostUrl(e.target.value)}
+                  placeholder="https://www.linkedin.com/posts/..."
+                  className="bg-white/10 border-white/20 text-white placeholder:text-gray-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Enter the full URL of the Cross-Border post you want to add
+                </p>
+              </div>
+              <Button 
+                onClick={async () => {
+                  if (!crossBorderPostUrl || !crossBorderPostUrl.trim()) {
+                    toast.error('Please enter a Cross-Border post URL');
+                    return;
+                  }
+
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+                    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+                    
+                    const headers: Record<string, string> = {
+                      'Content-Type': 'application/json',
+                    };
+                    if (token) {
+                      headers['Authorization'] = `Bearer ${token}`;
+                    }
+
+                    // Try dev endpoint first (no auth), then auth endpoint
+                    let response;
+                    try {
+                      response = await axios.post(
+                        `${API_BASE_URL}/api/admin/posts/from-url-dev`,
+                        {
+                          post_url: crossBorderPostUrl.trim(),
+                          post_type: 'cross_border'
+                        },
+                        {
+                          headers: { 'Content-Type': 'application/json' },
+                          timeout: 10000
+                        }
+                      );
+                    } catch (devError: any) {
+                      // Try with auth
+                      response = await axios.post(
+                        `${API_BASE_URL}/api/admin/posts/from-url`,
+                        {
+                          post_url: crossBorderPostUrl.trim(),
+                          post_type: 'cross_border'
+                        },
+                        {
+                          headers,
+                          timeout: 10000
+                        }
+                      );
+                    }
+
+                    toast.success('Post added successfully! It will appear in the dashboard.');
+                    setCrossBorderPostUrl('');
+                    
+                    // Reload posts to show the new one
+                    if (useApiPosts) {
+                      loadPostsFromAPI();
+                    }
+                  } catch (error: any) {
+                    console.error('Error posting URL:', error);
+                    let errorMsg = 'Failed to add post';
+                    if (error.response?.data?.detail) {
+                      errorMsg = typeof error.response.data.detail === 'string' 
+                        ? error.response.data.detail 
+                        : JSON.stringify(error.response.data.detail);
+                    } else if (error.message) {
+                      errorMsg = typeof error.message === 'string' ? error.message : String(error.message);
+                    }
+                    toast.error(errorMsg);
+                  }
+                }}
+                className="w-full bg-pink-600 hover:bg-pink-700"
+              >
+                Post
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
